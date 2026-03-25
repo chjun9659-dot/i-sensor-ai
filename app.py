@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 st.set_page_config(page_title="위험도 자동 분석기", layout="wide")
-st.write("버전 확인: 2026-03-25 15:30")
+st.write("버전 확인: 2026-03-25 16:10")
 
 # -----------------------------
 # 1. 기본 설정
@@ -147,6 +147,18 @@ def get_saved_files():
     return files
 
 
+def create_test_danger_data():
+    test_df = pd.DataFrame([
+        {"최고 온도": 15, "차량 감지": 1, "이벤트 종류": 25},
+        {"최고 온도": 13, "차량 감지": 1, "이벤트 종류": 21},
+        {"최고 온도": 11, "차량 감지": 1, "이벤트 종류": 22},
+        {"최고 온도": 8, "차량 감지": 0, "이벤트 종류": 5},
+        {"최고 온도": 9, "차량 감지": 1, "이벤트 종류": 10},
+        {"최고 온도": 14, "차량 감지": 1, "이벤트 종류": 30}
+    ])
+    return process_dataframe(test_df)
+
+
 def admin_dashboard(df, users):
     st.title("관리자 대시보드")
 
@@ -171,6 +183,28 @@ def admin_dashboard(df, users):
 
     if "dashboard_filter" not in st.session_state:
         st.session_state.dashboard_filter = "전체"
+
+    # 위험 경고 박스
+    if danger_count > 0:
+        st.markdown(
+            f"""
+            <div style="
+                background:#ffebee;
+                border:2px solid #d62828;
+                border-radius:16px;
+                padding:18px;
+                margin-bottom:20px;
+                text-align:center;
+                font-size:24px;
+                font-weight:800;
+                color:#b00020;
+                box-shadow:0 0 16px rgba(214,40,40,0.25);
+            ">
+                🚨 위험 데이터 {danger_count}건 발생
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # 상단 요약 카드
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -212,54 +246,66 @@ def admin_dashboard(df, users):
         )
 
     with c3:
+        danger_bg = "#ffe5e5" if danger_count > 0 else "#fff5f5"
+        danger_border = "#d62828" if danger_count > 0 else "#ffcccc"
+        danger_shadow = "0 0 18px rgba(214,40,40,0.35)" if danger_count > 0 else "none"
         st.markdown(
             f"""
             <div style="
-                background:#fff5f5;
-                border:1px solid #ffcccc;
+                background:{danger_bg};
+                border:2px solid {danger_border};
                 border-radius:16px;
                 padding:22px;
                 text-align:center;
                 min-height:120px;
+                box-shadow:{danger_shadow};
             ">
-                <div style="font-size:18px;font-weight:700;color:#d62828;">🔴 위험</div>
-                <div style="font-size:34px;font-weight:800;margin-top:10px;color:#d62828;">{danger_count}</div>
+                <div style="font-size:18px;font-weight:800;color:#d62828;">🔴 위험</div>
+                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#d62828;">{danger_count}</div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
     with c4:
+        warning_bg = "#fff8dc" if warning_count > 0 else "#fffdf0"
+        warning_border = "#d4a000" if warning_count > 0 else "#f4d35e"
+        warning_shadow = "0 0 14px rgba(212,160,0,0.22)" if warning_count > 0 else "none"
         st.markdown(
             f"""
             <div style="
-                background:#fffdf0;
-                border:1px solid #f4d35e;
+                background:{warning_bg};
+                border:2px solid {warning_border};
                 border-radius:16px;
                 padding:22px;
                 text-align:center;
                 min-height:120px;
+                box-shadow:{warning_shadow};
             ">
-                <div style="font-size:18px;font-weight:700;color:#c99700;">🟡 주의</div>
-                <div style="font-size:34px;font-weight:800;margin-top:10px;color:#c99700;">{warning_count}</div>
+                <div style="font-size:18px;font-weight:800;color:#c99700;">🟡 주의</div>
+                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#c99700;">{warning_count}</div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
     with c5:
+        normal_bg = "#ecfff0" if normal_count > 0 else "#f3fff3"
+        normal_border = "#52b788" if normal_count > 0 else "#b7efc5"
+        normal_shadow = "0 0 12px rgba(43,147,72,0.18)" if normal_count > 0 else "none"
         st.markdown(
             f"""
             <div style="
-                background:#f3fff3;
-                border:1px solid #b7efc5;
+                background:{normal_bg};
+                border:2px solid {normal_border};
                 border-radius:16px;
                 padding:22px;
                 text-align:center;
                 min-height:120px;
+                box-shadow:{normal_shadow};
             ">
-                <div style="font-size:18px;font-weight:700;color:#2b9348;">🟢 정상</div>
-                <div style="font-size:34px;font-weight:800;margin-top:10px;color:#2b9348;">{normal_count}</div>
+                <div style="font-size:18px;font-weight:800;color:#2b9348;">🟢 정상</div>
+                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#2b9348;">{normal_count}</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -342,11 +388,26 @@ def main():
     # 데이터 분석
     # -----------------------------
     if menu == "데이터 분석":
+        st.subheader("CSV 업로드 분석")
+
         uploaded_files = st.file_uploader(
             "CSV 파일 여러 개 업로드",
             type=["csv"],
             accept_multiple_files=True
         )
+
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+            if st.button("🚨 위험 테스트 데이터 자동 생성", use_container_width=True):
+                test_df = create_test_danger_data()
+                filename, filepath = save_result(test_df)
+                st.success(f"테스트 위험 데이터 저장 완료: {filename}")
+                st.dataframe(test_df, use_container_width=True)
+
+        with col_btn2:
+            if st.button("📋 테스트 데이터 설명 보기", use_container_width=True):
+                st.info("이 버튼은 위험/주의/정상 데이터가 섞인 샘플 데이터를 자동 생성하여 저장합니다.")
 
         if uploaded_files:
             all_results = []
