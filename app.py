@@ -37,7 +37,6 @@ for key, value in DEFAULT_SESSION.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-
 # -----------------------------
 # 공통 함수
 # -----------------------------
@@ -47,7 +46,6 @@ def show_logo():
         with col2:
             st.image(LOGO_PATH, width=120)
 
-
 def get_role_name(role):
     if role == "admin":
         return "관리자"
@@ -56,7 +54,6 @@ def get_role_name(role):
     elif role == "client":
         return "고객"
     return role
-
 
 def login():
     show_logo()
@@ -77,18 +74,15 @@ def login():
         else:
             st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
 
-
 def logout():
     for key, value in DEFAULT_SESSION.items():
         st.session_state[key] = value
     st.rerun()
 
-
 def get_user_folder(username):
     user_folder = DATA_FOLDER / username
     user_folder.mkdir(parents=True, exist_ok=True)
     return user_folder
-
 
 def normalize_complex_column(df):
     df = df.copy()
@@ -96,7 +90,6 @@ def normalize_complex_column(df):
         df["단지명"] = "전체"
     df["단지명"] = df["단지명"].fillna("전체").astype(str)
     return df
-
 
 def calculate_risk(row):
     risk = 0
@@ -129,7 +122,6 @@ def calculate_risk(row):
 
     return risk
 
-
 def classify_risk(risk):
     if risk >= 70:
         return "위험"
@@ -137,7 +129,6 @@ def classify_risk(risk):
         return "주의"
     else:
         return "정상"
-
 
 def process_dataframe(df, uploaded_file_name=""):
     df = df.copy()
@@ -157,7 +148,6 @@ def process_dataframe(df, uploaded_file_name=""):
 
     return df
 
-
 def apply_user_complex_scope(df):
     if df is None or df.empty:
         return df
@@ -168,7 +158,6 @@ def apply_user_complex_scope(df):
         df = df[df["단지명"].astype(str) == st.session_state.user_complex]
 
     return df
-
 
 def apply_complex_filter(df, key_prefix="main"):
     if df is None or df.empty:
@@ -223,7 +212,6 @@ def apply_complex_filter(df, key_prefix="main"):
 
     return filtered_df
 
-
 def save_result(df, username):
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"result_{now}.csv"
@@ -231,19 +219,16 @@ def save_result(df, username):
     df.to_csv(filepath, index=False, encoding="utf-8-sig")
     return filename, filepath
 
-
 def get_saved_files(username):
     user_folder = get_user_folder(username)
     files = sorted(user_folder.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
     return files
-
 
 def load_saved_file(file_path):
     try:
         return pd.read_csv(file_path)
     except:
         return None
-
 
 def get_all_saved_files():
     results = []
@@ -258,7 +243,6 @@ def get_all_saved_files():
             })
     results.sort(key=lambda x: x["mtime"], reverse=True)
     return results
-
 
 def save_risk_log(df, username):
     if df is None or df.empty:
@@ -280,7 +264,6 @@ def save_risk_log(df, username):
 
     df.to_csv(log_file, index=False, encoding="utf-8-sig")
 
-
 def load_risk_log():
     log_file = LOG_FOLDER / "risk_log.csv"
     if log_file.exists():
@@ -289,7 +272,6 @@ def load_risk_log():
         except:
             return None
     return None
-
 
 def show_danger_alert(df):
     if df is None or df.empty or "판정" not in df.columns:
@@ -339,7 +321,6 @@ def show_danger_alert(df):
         unsafe_allow_html=True
     )
 
-
 def create_test_danger_data():
     test_df = pd.DataFrame([
         {"단지명": "무등산자이", "최고 온도": 15, "차량 감지": 1, "이벤트 종류": 25, "동": "101동", "층": "지하2층", "구역": "A구역"},
@@ -351,14 +332,12 @@ def create_test_danger_data():
     ])
     return process_dataframe(test_df, "test_data.csv")
 
-
 def render_result_section(df, key_prefix="result", file_name="분석결과.csv"):
     if df is None or df.empty:
         st.warning("표시할 데이터가 없습니다.")
         return
 
     scoped_df = apply_user_complex_scope(df)
-
     show_danger_alert(scoped_df)
 
     st.subheader("분석 결과")
@@ -396,7 +375,6 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
         use_container_width=True,
         key=f"download_{key_prefix}"
     )
-
 
 def admin_dashboard(df):
     st.title("관리자 대시보드")
@@ -615,7 +593,6 @@ def admin_dashboard(df):
     else:
         st.info("저장된 위험 이력이 없습니다.")
 
-
 def admin_all_users_section():
     if st.session_state.role != "admin":
         return
@@ -669,7 +646,6 @@ def admin_all_users_section():
                 )
             else:
                 st.error("파일을 불러오지 못했습니다.")
-
 
 # -----------------------------
 # 메인 화면
@@ -827,7 +803,6 @@ def main():
 
     elif menu == "관리자 통합 조회":
         admin_all_users_section()
-
 
 # -----------------------------
 # 실행
