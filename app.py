@@ -5,6 +5,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="위험도 자동 분석기", layout="wide")
 st.write("버전 확인: 2026-03-25 15:30")
+
 # -----------------------------
 # 1. 기본 설정
 # -----------------------------
@@ -39,9 +40,9 @@ if "selected_saved_file" not in st.session_state:
 # -----------------------------
 def show_logo():
     if os.path.exists(LOGO_PATH):
-        col1, col2, col3 = st.columns([1, 2, 1])
+        col1, col2, col3 = st.columns([2, 3, 2])
         with col2:
-            st.image(LOGO_PATH, width=280)
+            st.image(LOGO_PATH, width=160)
 
 
 def login():
@@ -341,42 +342,50 @@ def main():
     # 데이터 분석
     # -----------------------------
     if menu == "데이터 분석":
-        uploaded_file = st.file_uploader("CSV 파일 업로드", type=["csv"])
+        uploaded_files = st.file_uploader(
+            "CSV 파일 여러 개 업로드",
+            type=["csv"],
+            accept_multiple_files=True
+        )
 
-        if uploaded_file is not None:
-            try:
-                df = pd.read_csv(uploaded_file)
-                st.subheader("원본 데이터")
-                st.dataframe(df, use_container_width=True)
+        if uploaded_files:
+            all_results = []
 
-                result_df = process_dataframe(df)
+            for uploaded_file in uploaded_files:
+                try:
+                    df = pd.read_csv(uploaded_file)
+                    result_df = process_dataframe(df)
+                    result_df["업로드파일명"] = uploaded_file.name
+                    all_results.append(result_df)
+                except Exception as e:
+                    st.error(f"{uploaded_file.name} 처리 중 오류 발생: {e}")
+
+            if all_results:
+                final_df = pd.concat(all_results, ignore_index=True)
 
                 st.subheader("분석 결과")
-                st.dataframe(result_df, use_container_width=True)
+                st.dataframe(final_df, use_container_width=True)
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.metric("위험", len(result_df[result_df["판정"] == "위험"]))
+                    st.metric("위험", len(final_df[final_df["판정"] == "위험"]))
                 with c2:
-                    st.metric("주의", len(result_df[result_df["판정"] == "주의"]))
+                    st.metric("주의", len(final_df[final_df["판정"] == "주의"]))
                 with c3:
-                    st.metric("정상", len(result_df[result_df["판정"] == "정상"]))
+                    st.metric("정상", len(final_df[final_df["판정"] == "정상"]))
 
-                csv_data = result_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                csv_data = final_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
                 st.download_button(
                     label="분석 결과 다운로드",
                     data=csv_data,
-                    file_name="분석결과.csv",
+                    file_name="분석결과_통합.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
 
                 if st.button("결과 저장", use_container_width=True):
-                    filename, filepath = save_result(result_df)
+                    filename, filepath = save_result(final_df)
                     st.success(f"저장 완료: {filename}")
-
-            except Exception as e:
-                st.error(f"파일 처리 중 오류 발생: {e}")
 
     # -----------------------------
     # 저장 파일 보기
