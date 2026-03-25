@@ -302,26 +302,35 @@ def admin_dashboard(df, users):
         st.session_state.dashboard_filter = "전체"
 
     if danger_count > 0:
-        st.audio("https://www.soundjay.com/buttons/sounds/beep-07.mp3")
-        st.markdown(
-            f"""
-            <div style="
-                background:#ffebee;
-                border:2px solid #d62828;
-                border-radius:16px;
-                padding:18px;
-                margin-bottom:20px;
-                text-align:center;
-                font-size:24px;
-                font-weight:800;
-                color:#b00020;
-                box-shadow:0 0 16px rgba(214,40,40,0.25);
-            ">
-                🚨 위험 데이터 {danger_count}건 발생
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    first_row = danger_df.iloc[0]
+
+    dong_text = str(first_row["동"]) if "동" in danger_df.columns else "-"
+    floor_text = str(first_row["층"]) if "층" in danger_df.columns else "-"
+    area_text = str(first_row["구역"]) if "구역" in danger_df.columns else "-"
+
+    st.markdown(
+        f"""
+        <div style="
+            background:#ffebee;
+            border:2px solid #d62828;
+            border-radius:16px;
+            padding:18px;
+            margin-bottom:20px;
+            text-align:center;
+            font-size:24px;
+            font-weight:800;
+            color:#b00020;
+            box-shadow:0 0 16px rgba(214,40,40,0.25);
+            line-height:1.8;
+        ">
+            🚨 위험 데이터 {danger_count}건 발생<br>
+            📍 위치: {dong_text} / {floor_text} / {area_text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.audio("https://www.soundjay.com/buttons/sounds/beep-07.mp3")
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
