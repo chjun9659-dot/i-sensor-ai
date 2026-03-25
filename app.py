@@ -302,6 +302,7 @@ def admin_dashboard(df, users):
         st.session_state.dashboard_filter = "전체"
 
     if danger_count > 0:
+        st.audio("https://www.soundjay.com/buttons/sounds/beep-07.mp3")
         st.markdown(
             f"""
             <div style="
