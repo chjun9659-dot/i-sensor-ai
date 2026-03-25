@@ -302,11 +302,11 @@ def admin_dashboard(df, users):
         st.session_state.dashboard_filter = "전체"
 
     if danger_count > 0:
-        first_row = danger_df.iloc[0]
+    first_row = danger_df.iloc[0]
 
-        dong_text = str(first_row["동"]) if "동" in danger_df.columns else "-"
-        floor_text = str(first_row["층"]) if "층" in danger_df.columns else "-"
-        area_text = str(first_row["구역"]) if "구역" in danger_df.columns else "-"
+    dong_text = str(first_row["동"]) if "동" in danger_df.columns else "-"
+    floor_text = str(first_row["층"]) if "층" in danger_df.columns else "-"
+    area_text = str(first_row["구역"]) if "구역" in danger_df.columns else "-"
 
     st.markdown(
         f"""
