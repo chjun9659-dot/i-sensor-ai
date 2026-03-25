@@ -4,11 +4,11 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-st.set_page_config(page_title="위험도 자동 분석기", layout="wide")
+# -----------------------------
+# 기본 설정
+# -----------------------------
+st.set_page_config(page_title="화재 위험도 자동 분석 프로그램", layout="wide")
 
-# -----------------------------
-# 1. 기본 설정
-# -----------------------------
 USERS = {
     "admin": {"password": "1234", "role": "admin", "complex": "전체"},
     "행정": {"password": "1234", "role": "staff", "complex": "전체"},
@@ -23,7 +23,7 @@ DATA_FOLDER.mkdir(exist_ok=True)
 LOG_FOLDER.mkdir(exist_ok=True)
 
 # -----------------------------
-# 2. 세션 상태 초기화
+# 세션 상태 초기화
 # -----------------------------
 DEFAULT_SESSION = {
     "logged_in": False,
@@ -31,31 +31,29 @@ DEFAULT_SESSION = {
     "role": "",
     "user_complex": "전체",
     "dashboard_filter": "전체",
-    "selected_saved_file": "선택 안 함",
-    "selected_admin_user": "전체",
-    "last_alert_message": "",
 }
 
 for key, value in DEFAULT_SESSION.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+
 # -----------------------------
-# 3. 공통 함수
+# 공통 함수
 # -----------------------------
 def show_logo():
     if os.path.exists(LOGO_PATH):
-        col1, col2, col3 = st.columns([2, 3, 2])
+        col1, col2, col3 = st.columns([3, 2, 3])
         with col2:
-            st.image(LOGO_PATH, width=180)
+            st.image(LOGO_PATH, width=120)
 
 
 def get_role_name(role):
     if role == "admin":
         return "관리자"
-    if role == "staff":
+    elif role == "staff":
         return "행정"
-    if role == "client":
+    elif role == "client":
         return "고객"
     return role
 
@@ -73,7 +71,7 @@ def login():
             st.session_state.logged_in = True
             st.session_state.username = username
             st.session_state.role = USERS[username]["role"]
-            st.session_state.user_complex = USERS[username].get("complex", "전체")
+            st.session_state.user_complex = USERS[username]["complex"]
             st.success("로그인 성공")
             st.rerun()
         else:
@@ -87,47 +85,17 @@ def logout():
 
 
 def get_user_folder(username):
-    folder = DATA_FOLDER / username
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
+    user_folder = DATA_FOLDER / username
+    user_folder.mkdir(parents=True, exist_ok=True)
+    return user_folder
 
 
-def save_result(df, username):
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"result_{now}.csv"
-    filepath = get_user_folder(username) / filename
-    df.to_csv(filepath, index=False, encoding="utf-8-sig")
-    return filename, filepath
-
-
-def get_saved_files(username):
-    folder = get_user_folder(username)
-    files = sorted(folder.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
-    return files
-
-
-def load_saved_file(file_path):
-    try:
-        return pd.read_csv(file_path)
-    except Exception:
-        return None
-
-
-def get_all_saved_files():
-    results = []
-    for username in USERS.keys():
-        folder = get_user_folder(username)
-        for file_path in folder.glob("*.csv"):
-            results.append(
-                {
-                    "username": username,
-                    "name": file_path.name,
-                    "path": file_path,
-                    "mtime": file_path.stat().st_mtime,
-                }
-            )
-    results.sort(key=lambda x: x["mtime"], reverse=True)
-    return results
+def normalize_complex_column(df):
+    df = df.copy()
+    if "단지명" not in df.columns:
+        df["단지명"] = "전체"
+    df["단지명"] = df["단지명"].fillna("전체").astype(str)
+    return df
 
 
 def calculate_risk(row):
@@ -139,17 +107,17 @@ def calculate_risk(row):
 
     try:
         최고온도 = float(최고온도)
-    except Exception:
+    except:
         최고온도 = 0
 
     try:
         차량감지 = float(차량감지)
-    except Exception:
+    except:
         차량감지 = 0
 
     try:
         이벤트종류 = float(이벤트종류)
-    except Exception:
+    except:
         이벤트종류 = 0
 
     if 최고온도 >= 12:
@@ -167,19 +135,13 @@ def classify_risk(risk):
         return "위험"
     elif risk >= 30:
         return "주의"
-    return "정상"
-
-
-def normalize_complex_column(df):
-    df = df.copy()
-    if "단지명" not in df.columns:
-        df["단지명"] = "전체"
-    df["단지명"] = df["단지명"].fillna("전체").astype(str)
-    return df
+    else:
+        return "정상"
 
 
 def process_dataframe(df, uploaded_file_name=""):
     df = df.copy()
+
     required_columns = ["최고 온도", "차량 감지", "이벤트 종류"]
     missing_cols = [col for col in required_columns if col not in df.columns]
 
@@ -220,46 +182,82 @@ def apply_complex_filter(df, key_prefix="main"):
 
     col0, col1, col2, col3 = st.columns(4)
 
-    complex_name = "전체"
-    dong = "전체"
-    floor = "전체"
-    area = "전체"
+    selected_complex = "전체"
+    selected_dong = "전체"
+    selected_floor = "전체"
+    selected_area = "전체"
 
     if st.session_state.role == "client" and st.session_state.user_complex != "전체":
         st.info(f"현재 계정은 **{st.session_state.user_complex}** 단지만 조회 가능합니다.")
     else:
         complex_list = ["전체"] + sorted([str(x) for x in filtered_df["단지명"].dropna().unique()])
         with col0:
-            complex_name = st.selectbox("단지 선택", complex_list, key=f"{key_prefix}_complex")
+            selected_complex = st.selectbox("단지 선택", complex_list, key=f"{key_prefix}_complex")
 
     if "동" in filtered_df.columns:
         dong_list = ["전체"] + sorted([str(x) for x in filtered_df["동"].dropna().unique()])
         with col1:
-            dong = st.selectbox("동 선택", dong_list, key=f"{key_prefix}_dong")
+            selected_dong = st.selectbox("동 선택", dong_list, key=f"{key_prefix}_dong")
 
     if "층" in filtered_df.columns:
         floor_list = ["전체"] + sorted([str(x) for x in filtered_df["층"].dropna().unique()])
         with col2:
-            floor = st.selectbox("층 선택", floor_list, key=f"{key_prefix}_floor")
+            selected_floor = st.selectbox("층 선택", floor_list, key=f"{key_prefix}_floor")
 
     if "구역" in filtered_df.columns:
         area_list = ["전체"] + sorted([str(x) for x in filtered_df["구역"].dropna().unique()])
         with col3:
-            area = st.selectbox("구역 선택", area_list, key=f"{key_prefix}_area")
+            selected_area = st.selectbox("구역 선택", area_list, key=f"{key_prefix}_area")
 
-    if st.session_state.role != "client" and complex_name != "전체":
-        filtered_df = filtered_df[filtered_df["단지명"].astype(str) == complex_name]
+    if st.session_state.role != "client" and selected_complex != "전체":
+        filtered_df = filtered_df[filtered_df["단지명"].astype(str) == selected_complex]
 
-    if "동" in filtered_df.columns and dong != "전체":
-        filtered_df = filtered_df[filtered_df["동"].astype(str) == dong]
+    if "동" in filtered_df.columns and selected_dong != "전체":
+        filtered_df = filtered_df[filtered_df["동"].astype(str) == selected_dong]
 
-    if "층" in filtered_df.columns and floor != "전체":
-        filtered_df = filtered_df[filtered_df["층"].astype(str) == floor]
+    if "층" in filtered_df.columns and selected_floor != "전체":
+        filtered_df = filtered_df[filtered_df["층"].astype(str) == selected_floor]
 
-    if "구역" in filtered_df.columns and area != "전체":
-        filtered_df = filtered_df[filtered_df["구역"].astype(str) == area]
+    if "구역" in filtered_df.columns and selected_area != "전체":
+        filtered_df = filtered_df[filtered_df["구역"].astype(str) == selected_area]
 
     return filtered_df
+
+
+def save_result(df, username):
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"result_{now}.csv"
+    filepath = get_user_folder(username) / filename
+    df.to_csv(filepath, index=False, encoding="utf-8-sig")
+    return filename, filepath
+
+
+def get_saved_files(username):
+    user_folder = get_user_folder(username)
+    files = sorted(user_folder.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
+    return files
+
+
+def load_saved_file(file_path):
+    try:
+        return pd.read_csv(file_path)
+    except:
+        return None
+
+
+def get_all_saved_files():
+    results = []
+    for username in USERS.keys():
+        user_folder = get_user_folder(username)
+        for file_path in user_folder.glob("*.csv"):
+            results.append({
+                "username": username,
+                "name": file_path.name,
+                "path": file_path,
+                "mtime": file_path.stat().st_mtime
+            })
+    results.sort(key=lambda x: x["mtime"], reverse=True)
+    return results
 
 
 def save_risk_log(df, username):
@@ -277,7 +275,7 @@ def save_risk_log(df, username):
         try:
             old_df = pd.read_csv(log_file)
             df = pd.concat([old_df, df], ignore_index=True)
-        except Exception:
+        except:
             pass
 
     df.to_csv(log_file, index=False, encoding="utf-8-sig")
@@ -288,7 +286,7 @@ def load_risk_log():
     if log_file.exists():
         try:
             return pd.read_csv(log_file)
-        except Exception:
+        except:
             return None
     return None
 
@@ -304,30 +302,38 @@ def show_danger_alert(df):
         return
 
     danger_count = len(danger_df)
-    first_row = danger_df.iloc[0]
+    first = danger_df.iloc[0]
 
-    complex_text = first_row["단지명"] if "단지명" in danger_df.columns else "-"
-    dong_text = first_row["동"] if "동" in danger_df.columns else "-"
-    floor_text = first_row["층"] if "층" in danger_df.columns else "-"
-    area_text = first_row["구역"] if "구역" in danger_df.columns else "-"
+    dong_text = first.get("동", "")
+    floor_text = first.get("층", "")
+    area_text = first.get("구역", "")
 
-    message = f"🚨 위험 데이터 {danger_count}건 발생 / {complex_text} / {dong_text} / {floor_text} / {area_text}"
+    location_parts = []
+    for x in [dong_text, floor_text, area_text]:
+        value = str(x).strip()
+        if value not in ["", "-", "nan", "None"]:
+            location_parts.append(value)
+
+    if location_parts:
+        location_html = f"<br>📍 위치: {' / '.join(location_parts)}"
+    else:
+        location_html = ""
 
     st.markdown(
         f"""
         <div style="
             background:#ffebee;
-            border:2px solid #d62828;
-            border-radius:16px;
-            padding:18px;
-            margin-bottom:20px;
+            border:2px solid #ff2b2b;
+            border-radius:18px;
+            padding:20px;
+            margin-bottom:18px;
             text-align:center;
-            font-size:24px;
+            font-size:22px;
             font-weight:800;
             color:#b00020;
-            box-shadow:0 0 16px rgba(214,40,40,0.25);
         ">
-            {message}
+            🚨 위험 데이터 {danger_count}건 발생
+            {location_html}
         </div>
         """,
         unsafe_allow_html=True
@@ -336,17 +342,17 @@ def show_danger_alert(df):
 
 def create_test_danger_data():
     test_df = pd.DataFrame([
-        {"단지명": "무등산자이", "최고 온도": 15, "차량 감지": 1, "이벤트 종류": 25, "동": "101동", "층": "지하 2층", "구역": "A구역"},
-        {"단지명": "무등산자이", "최고 온도": 13, "차량 감지": 1, "이벤트 종류": 21, "동": "101동", "층": "지하 1층", "구역": "B구역"},
-        {"단지명": "무등산자이", "최고 온도": 11, "차량 감지": 1, "이벤트 종류": 22, "동": "102동", "층": "지하 2층", "구역": "A구역"},
-        {"단지명": "센트럴파크", "최고 온도": 8, "차량 감지": 0, "이벤트 종류": 5, "동": "102동", "층": "지상 1층", "구역": "C구역"},
-        {"단지명": "센트럴파크", "최고 온도": 9, "차량 감지": 1, "이벤트 종류": 10, "동": "103동", "층": "지하 3층", "구역": "D구역"},
-        {"단지명": "센트럴파크", "최고 온도": 14, "차량 감지": 1, "이벤트 종류": 30, "동": "103동", "층": "지하 2층", "구역": "충전구역 3번"},
+        {"단지명": "무등산자이", "최고 온도": 15, "차량 감지": 1, "이벤트 종류": 25, "동": "101동", "층": "지하2층", "구역": "A구역"},
+        {"단지명": "무등산자이", "최고 온도": 13, "차량 감지": 1, "이벤트 종류": 21, "동": "101동", "층": "지하1층", "구역": "B구역"},
+        {"단지명": "무등산자이", "최고 온도": 11, "차량 감지": 1, "이벤트 종류": 22, "동": "102동", "층": "지하2층", "구역": "A구역"},
+        {"단지명": "센트럴파크", "최고 온도": 8, "차량 감지": 0, "이벤트 종류": 5, "동": "102동", "층": "지상1층", "구역": "C구역"},
+        {"단지명": "센트럴파크", "최고 온도": 9, "차량 감지": 1, "이벤트 종류": 10, "동": "103동", "층": "지하3층", "구역": "D구역"},
+        {"단지명": "센트럴파크", "최고 온도": 14, "차량 감지": 1, "이벤트 종류": 30, "동": "103동", "층": "지하2층", "구역": "충전구역3번"}
     ])
     return process_dataframe(test_df, "test_data.csv")
 
 
-def render_result_section(df, key_prefix="result", show_download_name="분석결과_통합.csv"):
+def render_result_section(df, key_prefix="result", file_name="분석결과.csv"):
     if df is None or df.empty:
         st.warning("표시할 데이터가 없습니다.")
         return
@@ -372,23 +378,23 @@ def render_result_section(df, key_prefix="result", show_download_name="분석결
     with c3:
         st.metric("정상", len(scoped_df[scoped_df["판정"] == "정상"]))
 
-    chart_df = scoped_df["판정"].value_counts().rename_axis("판정").reset_index(name="건수")
     st.subheader("판정별 건수")
-    st.bar_chart(chart_df.set_index("판정"))
+    chart_df = scoped_df["판정"].value_counts()
+    st.bar_chart(chart_df)
 
     if "단지명" in scoped_df.columns:
-        complex_chart_df = scoped_df.groupby(["단지명", "판정"]).size().unstack(fill_value=0)
         st.subheader("단지별 현황")
+        complex_chart_df = scoped_df.groupby(["단지명", "판정"]).size().unstack(fill_value=0)
         st.bar_chart(complex_chart_df)
 
     csv_data = filtered_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
     st.download_button(
         label="현재 화면 결과 다운로드",
         data=csv_data,
-        file_name=show_download_name,
+        file_name=file_name,
         mime="text/csv",
         use_container_width=True,
-        key=f"download_{key_prefix}",
+        key=f"download_{key_prefix}"
     )
 
 
@@ -402,6 +408,10 @@ def admin_dashboard(df):
     df = normalize_complex_column(df)
     df = apply_user_complex_scope(df)
 
+    if "판정" not in df.columns:
+        st.error("대시보드용 데이터에 '판정' 컬럼이 없습니다.")
+        return
+
     danger_df = df[df["판정"] == "위험"].copy()
     warning_df = df[df["판정"] == "주의"].copy()
     normal_df = df[df["판정"] == "정상"].copy()
@@ -413,24 +423,38 @@ def admin_dashboard(df):
     total_users = len(USERS)
 
     if danger_count > 0:
-        first_row = danger_df.iloc[0]
+        first = danger_df.iloc[0]
+
+        dong_text = first.get("동", "")
+        floor_text = first.get("층", "")
+        area_text = first.get("구역", "")
+
+        location_parts = []
+        for x in [dong_text, floor_text, area_text]:
+            value = str(x).strip()
+            if value not in ["", "-", "nan", "None"]:
+                location_parts.append(value)
+
+        if location_parts:
+            location_html = f"<br>📍 위치: {' / '.join(location_parts)}"
+        else:
+            location_html = ""
+
         st.markdown(
             f"""
             <div style="
                 background:#ffebee;
-                border:2px solid #d62828;
-                border-radius:16px;
-                padding:18px;
+                border:2px solid #ff2b2b;
+                border-radius:18px;
+                padding:20px;
                 margin-bottom:20px;
                 text-align:center;
-                font-size:24px;
+                font-size:22px;
                 font-weight:800;
                 color:#b00020;
-                box-shadow:0 0 16px rgba(214,40,40,0.25);
-                line-height:1.8;
             ">
-                🚨 위험 데이터 {danger_count}건 발생<br>
-                📍 단지: {first_row.get("단지명", "-")} / 위치: {first_row.get("동", "-")} / {first_row.get("층", "-")} / {first_row.get("구역", "-")}
+                🚨 위험 데이터 {danger_count}건 발생
+                {location_html}
             </div>
             """,
             unsafe_allow_html=True
@@ -439,37 +463,130 @@ def admin_dashboard(df):
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
-        st.metric("전체 사용자", total_users)
+        st.markdown(
+            f"""
+            <div style="
+                background:#f8f9fa;
+                border:1px solid #d9dee7;
+                border-radius:16px;
+                padding:22px;
+                text-align:center;
+                min-height:120px;
+            ">
+                <div style="font-size:18px;font-weight:700;">👥 전체 사용자</div>
+                <div style="font-size:34px;font-weight:800;margin-top:10px;">{total_users}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     with c2:
-        st.metric("전체 데이터", total_rows)
+        st.markdown(
+            f"""
+            <div style="
+                background:#f8f9fa;
+                border:1px solid #d9dee7;
+                border-radius:16px;
+                padding:22px;
+                text-align:center;
+                min-height:120px;
+            ">
+                <div style="font-size:18px;font-weight:700;">📁 전체 데이터</div>
+                <div style="font-size:34px;font-weight:800;margin-top:10px;">{total_rows}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     with c3:
-        st.metric("위험", danger_count)
+        danger_bg = "#ffe5e5" if danger_count > 0 else "#fff5f5"
+        danger_border = "#d62828" if danger_count > 0 else "#ffcccc"
+        st.markdown(
+            f"""
+            <div style="
+                background:{danger_bg};
+                border:2px solid {danger_border};
+                border-radius:16px;
+                padding:22px;
+                text-align:center;
+                min-height:120px;
+            ">
+                <div style="font-size:18px;font-weight:800;color:#d62828;">🔴 위험</div>
+                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#d62828;">{danger_count}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     with c4:
-        st.metric("주의", warning_count)
+        warning_bg = "#fff8dc" if warning_count > 0 else "#fffdf0"
+        warning_border = "#d4a000" if warning_count > 0 else "#f4d35e"
+        st.markdown(
+            f"""
+            <div style="
+                background:{warning_bg};
+                border:2px solid {warning_border};
+                border-radius:16px;
+                padding:22px;
+                text-align:center;
+                min-height:120px;
+            ">
+                <div style="font-size:18px;font-weight:800;color:#c99700;">🟡 주의</div>
+                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#c99700;">{warning_count}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
     with c5:
-        st.metric("정상", normal_count)
+        normal_bg = "#ecfff0" if normal_count > 0 else "#f3fff3"
+        normal_border = "#52b788" if normal_count > 0 else "#b7efc5"
+        st.markdown(
+            f"""
+            <div style="
+                background:{normal_bg};
+                border:2px solid {normal_border};
+                border-radius:16px;
+                padding:22px;
+                text-align:center;
+                min-height:120px;
+            ">
+                <div style="font-size:18px;font-weight:800;color:#2b9348;">🟢 정상</div>
+                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#2b9348;">{normal_count}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.write("")
 
     b1, b2, b3, b4 = st.columns(4)
+
     with b1:
-        if st.button("🔴 위험 보기", use_container_width=True):
+        if st.button("🔴 위험 보기", key="dash_danger", use_container_width=True):
             st.session_state.dashboard_filter = "위험"
             st.rerun()
+
     with b2:
-        if st.button("🟡 주의 보기", use_container_width=True):
+        if st.button("🟡 주의 보기", key="dash_warning", use_container_width=True):
             st.session_state.dashboard_filter = "주의"
             st.rerun()
+
     with b3:
-        if st.button("🟢 정상 보기", use_container_width=True):
+        if st.button("🟢 정상 보기", key="dash_normal", use_container_width=True):
             st.session_state.dashboard_filter = "정상"
             st.rerun()
+
     with b4:
-        if st.button("📋 전체 보기", use_container_width=True):
+        if st.button("📋 전체 보기", key="dash_all", use_container_width=True):
             st.session_state.dashboard_filter = "전체"
             st.rerun()
 
+    st.markdown("---")
     st.info(f"현재 필터: {st.session_state.dashboard_filter}")
 
     current_filter = st.session_state.dashboard_filter
+
     if current_filter == "위험":
         filtered_df = danger_df
     elif current_filter == "주의":
@@ -506,73 +623,56 @@ def admin_all_users_section():
     st.subheader("관리자 전체 사용자 통합 조회")
 
     all_user_names = sorted(USERS.keys())
-    admin_user_options = ["전체"] + all_user_names
-
-    selected_admin_user = st.selectbox(
-        "조회할 사용자 선택",
-        options=admin_user_options,
-        key="selected_admin_user"
-    )
+    selected_admin_user = st.selectbox("조회할 사용자 선택", ["전체"] + all_user_names)
 
     all_files = get_all_saved_files()
 
     if selected_admin_user != "전체":
         all_files = [f for f in all_files if f["username"] == selected_admin_user]
 
-    admin_search_text = st.text_input(
-        "전체 사용자 파일명 검색",
-        placeholder="예: 무등산자이 또는 20260320",
-        key="admin_search_text"
-    )
+    search_text = st.text_input("파일명 검색", placeholder="예: 무등산자이 또는 20260325")
 
-    if admin_search_text.strip():
-        search_lower = admin_search_text.lower()
+    if search_text.strip():
+        search_lower = search_text.lower()
         all_files = [
             f for f in all_files
             if search_lower in f["name"].lower() or search_lower in f["username"].lower()
         ]
 
-    filtered_files = all_files[:50]
-
-    if not filtered_files:
-        st.info("조건에 맞는 사용자 저장 파일이 없습니다.")
+    if not all_files:
+        st.info("조건에 맞는 저장 파일이 없습니다.")
         return
-
-    st.caption(f"검색 결과 {len(all_files)}개 중 최근 50개 표시")
 
     display_options = ["선택 안 함"]
     option_map = {}
 
-    for item in filtered_files:
+    for item in all_files[:50]:
         display_name = f"[{item['username']}] {item['name']}"
         display_options.append(display_name)
         option_map[display_name] = item
 
-    selected_admin_file = st.selectbox(
-        "전체 사용자 CSV 선택",
-        options=display_options,
-        key="selected_admin_file"
-    )
+    selected_file = st.selectbox("전체 사용자 CSV 선택", display_options, key="admin_all_file")
 
     if st.button("관리자 불러오기", use_container_width=True):
-        if selected_admin_file == "선택 안 함":
+        if selected_file == "선택 안 함":
             st.warning("불러올 파일을 먼저 선택해주세요.")
         else:
-            selected_item = option_map[selected_admin_file]
+            selected_item = option_map[selected_file]
             saved_df = load_saved_file(selected_item["path"])
 
             if saved_df is not None:
-                st.success(f"관리자 불러오기 완료: {selected_admin_file}")
+                st.success(f"불러오기 완료: {selected_file}")
                 render_result_section(
                     saved_df,
                     key_prefix="admin_all",
-                    show_download_name=selected_item["name"]
+                    file_name=selected_item["name"]
                 )
             else:
                 st.error("파일을 불러오지 못했습니다.")
 
+
 # -----------------------------
-# 4. 메인 화면
+# 메인 화면
 # -----------------------------
 def main():
     if not st.session_state.logged_in:
@@ -587,7 +687,9 @@ def main():
         st.caption(
             f"로그인: {st.session_state.username} | 권한: {get_role_name(st.session_state.role)}"
         )
+
     with col2:
+        st.write("")
         st.write("")
         if st.button("로그아웃", use_container_width=True):
             logout()
@@ -600,9 +702,6 @@ def main():
 
     menu = st.sidebar.radio("메뉴 선택", menu_options)
 
-    # -----------------------------
-    # 데이터 분석
-    # -----------------------------
     if menu == "데이터 분석":
         st.subheader("CSV 업로드 분석")
 
@@ -622,17 +721,17 @@ def main():
                 test_df = create_test_danger_data()
                 test_df = apply_user_complex_scope(test_df)
 
-                danger_df = test_df[test_df["판정"] == "위험"].copy()
-                if not danger_df.empty:
-                    save_risk_log(danger_df, st.session_state.username)
+                danger_only = test_df[test_df["판정"] == "위험"].copy()
+                if not danger_only.empty:
+                    save_risk_log(danger_only, st.session_state.username)
 
-                filename, filepath = save_result(test_df, st.session_state.username)
-                st.success(f"테스트 위험 데이터 저장 완료: {filename}")
-                render_result_section(test_df, key_prefix="test_data", show_download_name=filename)
+                filename, _ = save_result(test_df, st.session_state.username)
+                st.success(f"테스트 데이터 저장 완료: {filename}")
+                render_result_section(test_df, key_prefix="test_data", file_name=filename)
 
         with col_btn2:
             if st.button("📋 테스트 데이터 설명 보기", use_container_width=True):
-                st.info("이 버튼은 위험/주의/정상 데이터가 섞인 샘플 데이터를 자동 생성하여 저장합니다.")
+                st.info("위험/주의/정상 데이터가 섞인 샘플 데이터를 자동 생성합니다.")
 
         if uploaded_files:
             all_results = []
@@ -643,36 +742,33 @@ def main():
                     result_df = process_dataframe(df, uploaded_file.name)
 
                     if st.session_state.role == "client" and st.session_state.user_complex != "전체":
-                        if "단지명" in result_df.columns:
-                            result_df = result_df[result_df["단지명"].astype(str) == st.session_state.user_complex]
+                        result_df = result_df[result_df["단지명"].astype(str) == st.session_state.user_complex]
 
                     if not result_df.empty:
                         all_results.append(result_df)
+
                 except Exception as e:
                     st.error(f"{uploaded_file.name} 처리 중 오류 발생: {e}")
 
             if all_results:
                 final_df = pd.concat(all_results, ignore_index=True)
 
-                danger_df = final_df[final_df["판정"] == "위험"].copy()
-                if not danger_df.empty:
-                    save_risk_log(danger_df, st.session_state.username)
+                danger_only = final_df[final_df["판정"] == "위험"].copy()
+                if not danger_only.empty:
+                    save_risk_log(danger_only, st.session_state.username)
 
                 render_result_section(
                     final_df,
                     key_prefix="analysis_result",
-                    show_download_name="분석결과_통합.csv"
+                    file_name="분석결과_통합.csv"
                 )
 
                 if st.button("결과 저장", use_container_width=True):
-                    filename, filepath = save_result(final_df, st.session_state.username)
+                    filename, _ = save_result(final_df, st.session_state.username)
                     st.success(f"저장 완료: {filename}")
             else:
                 st.warning("처리 가능한 데이터가 없습니다.")
 
-    # -----------------------------
-    # 저장 파일 보기
-    # -----------------------------
     elif menu == "저장 파일 보기":
         st.subheader("저장된 결과 파일")
 
@@ -684,7 +780,11 @@ def main():
             file_names = [f.name for f in saved_files]
             selected_file_name = st.selectbox("파일 선택", file_names)
 
-            selected_path = next((f for f in saved_files if f.name == selected_file_name), None)
+            selected_path = None
+            for f in saved_files:
+                if f.name == selected_file_name:
+                    selected_path = f
+                    break
 
             if selected_path is not None:
                 loaded_df = load_saved_file(selected_path)
@@ -694,24 +794,23 @@ def main():
                     render_result_section(
                         loaded_df,
                         key_prefix="saved_file",
-                        show_download_name=selected_file_name
+                        file_name=selected_file_name
                     )
                 else:
                     st.error("파일을 불러오지 못했습니다.")
 
-    # -----------------------------
-    # 관리자 대시보드
-    # -----------------------------
     elif menu == "관리자 대시보드":
-        all_files = get_all_saved_files() if st.session_state.role == "admin" else [
-            {
-                "username": st.session_state.username,
-                "name": f.name,
-                "path": f,
-                "mtime": f.stat().st_mtime
-            }
-            for f in get_saved_files(st.session_state.username)
-        ]
+        if st.session_state.role == "admin":
+            all_files = get_all_saved_files()
+        else:
+            all_files = []
+            for f in get_saved_files(st.session_state.username):
+                all_files.append({
+                    "username": st.session_state.username,
+                    "name": f.name,
+                    "path": f,
+                    "mtime": f.stat().st_mtime
+                })
 
         if not all_files:
             st.warning("저장된 파일이 없어 대시보드에 표시할 데이터가 없습니다.")
@@ -720,14 +819,12 @@ def main():
             dashboard_df = load_saved_file(latest_path)
 
             if dashboard_df is not None:
+                dashboard_df = process_dataframe(dashboard_df)
                 st.caption(f"기준 파일: {all_files[0]['name']}")
-                admin_dashboard(process_dataframe(dashboard_df))
+                admin_dashboard(dashboard_df)
             else:
                 st.error("대시보드용 데이터를 불러오지 못했습니다.")
 
-    # -----------------------------
-    # 관리자 통합 조회
-    # -----------------------------
     elif menu == "관리자 통합 조회":
         admin_all_users_section()
 
