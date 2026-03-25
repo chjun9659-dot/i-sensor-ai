@@ -1,10 +1,9 @@
+
 import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
 from pathlib import Path
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
 
 # -----------------------------
 # 기본 설정
@@ -334,32 +333,6 @@ def create_test_danger_data():
     ])
     return process_dataframe(test_df, "test_data.csv")
 
-def create_pdf_report(df, filename="report.pdf"):
-    doc = SimpleDocTemplate(filename)
-    styles = getSampleStyleSheet()
-
-    elements = []
-
-    total = len(df)
-    danger = len(df[df["판정"] == "위험"])
-    warning = len(df[df["판정"] == "주의"])
-    normal = len(df[df["판정"] == "정상"])
-
-    elements.append(Paragraph("화재 위험 분석 리포트", styles["Title"]))
-    elements.append(Spacer(1, 12))
-
-    elements.append(Paragraph(f"총 데이터: {total}", styles["Normal"]))
-    elements.append(Paragraph(f"위험: {danger}", styles["Normal"]))
-    elements.append(Paragraph(f"주의: {warning}", styles["Normal"]))
-    elements.append(Paragraph(f"정상: {normal}", styles["Normal"]))
-
-    elements.append(Spacer(1, 20))
-    elements.append(Paragraph("※ 본 리포트는 아이센서 데이터를 기반으로 생성되었습니다.", styles["Normal"]))
-
-    doc.build(elements)
-
-    return filename
-
 def render_result_section(df, key_prefix="result", file_name="분석결과.csv"):
     if df is None or df.empty:
         st.warning("표시할 데이터가 없습니다.")
@@ -374,17 +347,6 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
     if filtered_df.empty:
         st.warning("조건에 맞는 데이터가 없습니다.")
         return
-    
-    if st.button("📄 리포트 생성"):
-        pdf_file = create_pdf_report(scoped_df, "report.pdf")
-
-        with open(pdf_file, "rb") as f:
-            st.download_button(
-            label="📥 PDF 다운로드",
-            data=f,
-            file_name="화재위험리포트.pdf",
-            mime="application/pdf"
-        )
 
     st.dataframe(filtered_df, use_container_width=True, height=500)
 
