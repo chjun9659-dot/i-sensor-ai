@@ -17,6 +17,9 @@ USERS = {
 SAVE_FOLDER = "saved_data"
 os.makedirs(SAVE_FOLDER, exist_ok=True)
 
+LOG_FOLDER = "risk_logs"
+os.makedirs(LOG_FOLDER, exist_ok=True)
+
 LOGO_PATH = "logo.png"   # 같은 폴더에 logo.png 넣어두면 자동 표시
 
 # -----------------------------
@@ -34,6 +37,8 @@ if "dashboard_filter" not in st.session_state:
 if "selected_saved_file" not in st.session_state:
     st.session_state.selected_saved_file = "선택 안 함"
 
+if "last_alert_message" not in st.session_state:
+    st.session_state.last_alert_message = ""
 
 # -----------------------------
 # 3. 공통 함수
@@ -147,16 +152,128 @@ def get_saved_files():
     return files
 
 
+def save_risk_log(df):
+    if df is None or df.empty:
+        return
+
+    df = df.copy()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    df["기록시간"] = now
+
+    log_file = os.path.join(LOG_FOLDER, "risk_log.csv")
+
+    if os.path.exists(log_file):
+        try:
+            old_df = pd.read_csv(log_file)
+            df = pd.concat([old_df, df], ignore_index=True)
+        except:
+            pass
+
+    df.to_csv(log_file, index=False, encoding="utf-8-sig")
+
+
+def load_risk_log():
+    log_file = os.path.join(LOG_FOLDER, "risk_log.csv")
+    if os.path.exists(log_file):
+        try:
+            return pd.read_csv(log_file)
+        except:
+            return None
+    return None
+
+
 def create_test_danger_data():
     test_df = pd.DataFrame([
-        {"최고 온도": 15, "차량 감지": 1, "이벤트 종류": 25},
-        {"최고 온도": 13, "차량 감지": 1, "이벤트 종류": 21},
-        {"최고 온도": 11, "차량 감지": 1, "이벤트 종류": 22},
-        {"최고 온도": 8, "차량 감지": 0, "이벤트 종류": 5},
-        {"최고 온도": 9, "차량 감지": 1, "이벤트 종류": 10},
-        {"최고 온도": 14, "차량 감지": 1, "이벤트 종류": 30}
+        {"최고 온도": 15, "차량 감지": 1, "이벤트 종류": 25, "동": "101동", "층": "지하 2층", "구역": "A구역"},
+        {"최고 온도": 13, "차량 감지": 1, "이벤트 종류": 21, "동": "101동", "층": "지하 1층", "구역": "B구역"},
+        {"최고 온도": 11, "차량 감지": 1, "이벤트 종류": 22, "동": "102동", "층": "지하 2층", "구역": "A구역"},
+        {"최고 온도": 8, "차량 감지": 0, "이벤트 종류": 5, "동": "102동", "층": "지상 1층", "구역": "C구역"},
+        {"최고 온도": 9, "차량 감지": 1, "이벤트 종류": 10, "동": "103동", "층": "지하 3층", "구역": "D구역"},
+        {"최고 온도": 14, "차량 감지": 1, "이벤트 종류": 30, "동": "103동", "층": "지하 2층", "구역": "충전구역 3번"}
     ])
     return process_dataframe(test_df)
+
+
+def apply_location_filter(df, key_prefix="main"):
+    filtered_df = df.copy()
+
+    st.markdown("### 📍 위치 필터")
+
+    col1, col2, col3 = st.columns(3)
+
+    dong = "전체"
+    floor = "전체"
+    area = "전체"
+
+    if "동" in filtered_df.columns:
+        dong_list = ["전체"] + sorted([str(x) for x in filtered_df["동"].dropna().unique()])
+        with col1:
+            dong = st.selectbox("동 선택", dong_list, key=f"{key_prefix}_dong")
+
+    if "층" in filtered_df.columns:
+        floor_list = ["전체"] + sorted([str(x) for x in filtered_df["층"].dropna().unique()])
+        with col2:
+            floor = st.selectbox("층 선택", floor_list, key=f"{key_prefix}_floor")
+
+    if "구역" in filtered_df.columns:
+        area_list = ["전체"] + sorted([str(x) for x in filtered_df["구역"].dropna().unique()])
+        with col3:
+            area = st.selectbox("구역 선택", area_list, key=f"{key_prefix}_area")
+
+    if "동" in filtered_df.columns and dong != "전체":
+        filtered_df = filtered_df[filtered_df["동"].astype(str) == dong]
+
+    if "층" in filtered_df.columns and floor != "전체":
+        filtered_df = filtered_df[filtered_df["층"].astype(str) == floor]
+
+    if "구역" in filtered_df.columns and area != "전체":
+        filtered_df = filtered_df[filtered_df["구역"].astype(str) == area]
+
+    return filtered_df
+
+
+def show_danger_alert(df):
+    if df is None or df.empty or "판정" not in df.columns:
+        return
+
+    danger_df = df[df["판정"] == "위험"].copy()
+
+    if danger_df.empty:
+        return
+
+    danger_count = len(danger_df)
+
+    location_text = ""
+    if "동" in danger_df.columns or "층" in danger_df.columns or "구역" in danger_df.columns:
+        first_row = danger_df.iloc[0]
+        dong = first_row["동"] if "동" in danger_df.columns else "-"
+        floor = first_row["층"] if "층" in danger_df.columns else "-"
+        area = first_row["구역"] if "구역" in danger_df.columns else "-"
+        location_text = f" / 위치: {dong} {floor} {area}"
+
+    message = f"🚨 위험 데이터 {danger_count}건 발생{location_text}"
+
+    st.markdown(
+        f"""
+        <div style="
+            background:#ffebee;
+            border:2px solid #d62828;
+            border-radius:16px;
+            padding:18px;
+            margin-bottom:20px;
+            text-align:center;
+            font-size:24px;
+            font-weight:800;
+            color:#b00020;
+            box-shadow:0 0 16px rgba(214,40,40,0.25);
+        ">
+            {message}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.audio("https://www.soundjay.com/buttons/sounds/beep-07.mp3")
 
 
 def admin_dashboard(df, users):
@@ -184,7 +301,6 @@ def admin_dashboard(df, users):
     if "dashboard_filter" not in st.session_state:
         st.session_state.dashboard_filter = "전체"
 
-    # 위험 경고 박스
     if danger_count > 0:
         st.markdown(
             f"""
@@ -206,7 +322,6 @@ def admin_dashboard(df, users):
             unsafe_allow_html=True
         )
 
-    # 상단 요약 카드
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
@@ -313,7 +428,6 @@ def admin_dashboard(df, users):
 
     st.write("")
 
-    # 실제 클릭 버튼
     b1, b2, b3, b4 = st.columns(4)
 
     with b1:
@@ -351,11 +465,22 @@ def admin_dashboard(df, users):
         filtered_df = df
 
     st.subheader("필터 결과")
+    filtered_df = apply_location_filter(filtered_df, key_prefix="dashboard")
 
     if filtered_df.empty:
         st.warning(f"{current_filter} 데이터가 없습니다.")
     else:
         st.dataframe(filtered_df, use_container_width=True, height=500)
+
+    st.markdown("---")
+    st.subheader("📜 위험 발생 이력")
+
+    log_df = load_risk_log()
+    if log_df is not None and not log_df.empty:
+        dashboard_log_df = apply_location_filter(log_df, key_prefix="dashboard_log")
+        st.dataframe(dashboard_log_df, use_container_width=True, height=300)
+    else:
+        st.info("저장된 위험 이력이 없습니다.")
 
 
 # -----------------------------
@@ -401,8 +526,11 @@ def main():
         with col_btn1:
             if st.button("🚨 위험 테스트 데이터 자동 생성", use_container_width=True):
                 test_df = create_test_danger_data()
+                save_risk_log(test_df[test_df["판정"] == "위험"])
                 filename, filepath = save_result(test_df)
                 st.success(f"테스트 위험 데이터 저장 완료: {filename}")
+                show_danger_alert(test_df)
+                test_df = apply_location_filter(test_df, key_prefix="test_data")
                 st.dataframe(test_df, use_container_width=True)
 
         with col_btn2:
@@ -424,8 +552,15 @@ def main():
             if all_results:
                 final_df = pd.concat(all_results, ignore_index=True)
 
+                danger_df = final_df[final_df["판정"] == "위험"].copy()
+                if not danger_df.empty:
+                    save_risk_log(danger_df)
+
+                show_danger_alert(final_df)
+
                 st.subheader("분석 결과")
-                st.dataframe(final_df, use_container_width=True)
+                filtered_final_df = apply_location_filter(final_df, key_prefix="analysis_result")
+                st.dataframe(filtered_final_df, use_container_width=True)
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
@@ -435,7 +570,7 @@ def main():
                 with c3:
                     st.metric("정상", len(final_df[final_df["판정"] == "정상"]))
 
-                csv_data = final_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                csv_data = filtered_final_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
                 st.download_button(
                     label="분석 결과 다운로드",
                     data=csv_data,
@@ -466,9 +601,11 @@ def main():
 
                 if loaded_df is not None:
                     st.success(f"불러온 파일: {selected_file}")
-                    st.dataframe(loaded_df, use_container_width=True)
 
-                    csv_data = loaded_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+                    loaded_df_filtered = apply_location_filter(loaded_df, key_prefix="saved_file")
+                    st.dataframe(loaded_df_filtered, use_container_width=True)
+
+                    csv_data = loaded_df_filtered.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
                     st.download_button(
                         label="이 파일 다운로드",
                         data=csv_data,
