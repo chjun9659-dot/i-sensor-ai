@@ -194,7 +194,7 @@ def create_test_danger_data():
     return process_dataframe(test_df)
 
 
-def apply_location_filter(df, key_prefix="main"):
+def apply_complex_filter(df, key_prefix="main"):
     filtered_df = df.copy()
 
     st.markdown("### 📍 위치 필터")
@@ -474,7 +474,7 @@ def admin_dashboard(df, users):
         filtered_df = df
 
     st.subheader("필터 결과")
-    filtered_df = apply_location_filter(filtered_df, key_prefix="dashboard")
+    filtered_df = apply_complex_filter(filtered_df, key_prefix="dashboard")
 
     if filtered_df.empty:
         st.warning(f"{current_filter} 데이터가 없습니다.")
@@ -486,7 +486,7 @@ def admin_dashboard(df, users):
 
     log_df = load_risk_log()
     if log_df is not None and not log_df.empty:
-        dashboard_log_df = apply_location_filter(log_df, key_prefix="dashboard_log")
+        dashboard_log_df = apply_complex_filter(log_df, key_prefix="dashboard_log")
         st.dataframe(dashboard_log_df, use_container_width=True, height=300)
     else:
         st.info("저장된 위험 이력이 없습니다.")
@@ -539,7 +539,7 @@ def main():
                 filename, filepath = save_result(test_df)
                 st.success(f"테스트 위험 데이터 저장 완료: {filename}")
                 show_danger_alert(test_df)
-                test_df = apply_location_filter(test_df, key_prefix="test_data")
+                test_df = apply_complex_filter(test_df, key_prefix="test_data")
                 st.dataframe(test_df, use_container_width=True)
 
         with col_btn2:
@@ -568,7 +568,7 @@ def main():
                 show_danger_alert(final_df)
 
                 st.subheader("분석 결과")
-                filtered_final_df = apply_location_filter(final_df, key_prefix="analysis_result")
+                filtered_final_df = apply_complex_filter(final_df, key_prefix="analysis_result")
                 st.dataframe(filtered_final_df, use_container_width=True)
 
                 c1, c2, c3 = st.columns(3)
@@ -611,7 +611,7 @@ def main():
                 if loaded_df is not None:
                     st.success(f"불러온 파일: {selected_file}")
 
-                    loaded_df_filtered = apply_location_filter(loaded_df, key_prefix="saved_file")
+                    loaded_df_filtered = apply_complex_filter(loaded_df, key_prefix="saved_file")
                     st.dataframe(loaded_df_filtered, use_container_width=True)
 
                     csv_data = loaded_df_filtered.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
@@ -643,6 +643,59 @@ def main():
             else:
                 st.error("대시보드용 데이터를 불러오지 못했습니다.")
 
+# 👉 기존 코드 그대로 유지 + 단지 필터 함수만 추가
+
+# -----------------------------
+# 🔥 단지 필터 추가 (핵심 기능)
+# -----------------------------
+def apply_complex_filter(df, key_prefix="main"):
+    filtered_df = df.copy()
+
+    st.markdown("### 🏢 단지 / 위치 필터")
+
+    col0, col1, col2, col3 = st.columns(4)
+
+    complex_name = "전체"
+    dong = "전체"
+    floor = "전체"
+    area = "전체"
+
+    # ✅ 단지 필터
+    if "단지명" in filtered_df.columns:
+        complex_list = ["전체"] + sorted([str(x) for x in filtered_df["단지명"].dropna().unique()])
+        with col0:
+            complex_name = st.selectbox("단지 선택", complex_list, key=f"{key_prefix}_complex")
+
+    # 기존 위치 필터 유지
+    if "동" in filtered_df.columns:
+        dong_list = ["전체"] + sorted([str(x) for x in filtered_df["동"].dropna().unique()])
+        with col1:
+            dong = st.selectbox("동", dong_list, key=f"{key_prefix}_dong")
+
+    if "층" in filtered_df.columns:
+        floor_list = ["전체"] + sorted([str(x) for x in filtered_df["층"].dropna().unique()])
+        with col2:
+            floor = st.selectbox("층", floor_list, key=f"{key_prefix}_floor")
+
+    if "구역" in filtered_df.columns:
+        area_list = ["전체"] + sorted([str(x) for x in filtered_df["구역"].dropna().unique()])
+        with col3:
+            area = st.selectbox("구역", area_list, key=f"{key_prefix}_area")
+
+    # 필터 적용
+    if "단지명" in filtered_df.columns and complex_name != "전체":
+        filtered_df = filtered_df[filtered_df["단지명"].astype(str) == complex_name]
+
+    if "동" in filtered_df.columns and dong != "전체":
+        filtered_df = filtered_df[filtered_df["동"].astype(str) == dong]
+
+    if "층" in filtered_df.columns and floor != "전체":
+        filtered_df = filtered_df[filtered_df["층"].astype(str) == floor]
+
+    if "구역" in filtered_df.columns and area != "전체":
+        filtered_df = filtered_df[filtered_df["구역"].astype(str) == area]
+
+    return filtered_df
 
 # -----------------------------
 # 실행
