@@ -20,6 +20,8 @@ FILE_MAP = {
     "계약단지": os.path.join(DATA_DIR, "contract_sites.csv"),
     "할일": os.path.join(DATA_DIR, "tasks.csv"),
     "일정": os.path.join(DATA_DIR, "schedule.csv"),
+    "세금알림": os.path.join(DATA_DIR, "tax_alerts.csv"),
+    "입대의알림": os.path.join(DATA_DIR, "meeting_alerts.csv"),
 }
 
 # =========================================================
@@ -129,6 +131,18 @@ def init_schedule_file():
         save_df("일정", df)
 
 
+def init_tax_alert_file():
+    if not os.path.exists(FILE_MAP["세금알림"]):
+        df = pd.DataFrame(columns=["등록일시", "작성자", "단지명", "예정일", "상태", "비고"])
+        save_df("세금알림", df)
+
+
+def init_meeting_alert_file():
+    if not os.path.exists(FILE_MAP["입대의알림"]):
+        df = pd.DataFrame(columns=["등록일시", "작성자", "단지명", "입대의일자", "상태", "비고"])
+        save_df("입대의알림", df)
+
+
 def load_tasks_df():
     init_tasks_file()
     df = load_df("할일")
@@ -155,6 +169,34 @@ def load_schedule_df():
 
 def save_schedule_df(df: pd.DataFrame):
     save_df("일정", df[["등록일시", "작성자", "일정명", "날짜"]].copy())
+
+
+def load_tax_alert_df():
+    init_tax_alert_file()
+    df = load_df("세금알림")
+    needed = ["등록일시", "작성자", "단지명", "예정일", "상태", "비고"]
+    for col in needed:
+        if col not in df.columns:
+            df[col] = ""
+    return df[needed].copy()
+
+
+def save_tax_alert_df(df: pd.DataFrame):
+    save_df("세금알림", df[["등록일시", "작성자", "단지명", "예정일", "상태", "비고"]].copy())
+
+
+def load_meeting_alert_df():
+    init_meeting_alert_file()
+    df = load_df("입대의알림")
+    needed = ["등록일시", "작성자", "단지명", "입대의일자", "상태", "비고"]
+    for col in needed:
+        if col not in df.columns:
+            df[col] = ""
+    return df[needed].copy()
+
+
+def save_meeting_alert_df(df: pd.DataFrame):
+    save_df("입대의알림", df[["등록일시", "작성자", "단지명", "입대의일자", "상태", "비고"]].copy())
 
 
 def make_unique_columns(cols):
@@ -351,6 +393,68 @@ def styled_dataframe(df: pd.DataFrame):
     st.dataframe(styled, use_container_width=True, height=500)
 
 
+def is_done_status(value):
+    v = str(value).strip().lower()
+    done_values = ["완료", "발행완료", "발행", "처리완료", "ok", "o", "y", "yes", "완", "끝"]
+    return v in [x.lower() for x in done_values]
+
+
+def get_d_day_label(target_date):
+    today = pd.to_datetime(datetime.today().date())
+    if pd.isna(target_date):
+        return ""
+    diff = (target_date - today).days
+    if diff < 0:
+        return f"D+{abs(diff)}"
+    elif diff == 0:
+        return "D-Day"
+    else:
+        return f"D-{diff}"
+
+
+def make_alert_status(target_date, done_value):
+    if is_done_status(done_value):
+        return "완료"
+
+    today = pd.to_datetime(datetime.today().date())
+    if pd.isna(target_date):
+        return "날짜없음"
+
+    diff = (target_date - today).days
+    if diff < 0:
+        return "지남"
+    elif diff == 0:
+        return "오늘"
+    elif diff <= 3:
+        return "긴급"
+    elif diff <= 7:
+        return "임박"
+    else:
+        return "예정"
+
+
+def style_alert_value(val):
+    s = str(val).strip()
+    if s == "완료":
+        return "background-color: #dff0d8; color: #1b5e20; font-weight: bold;"
+    if s in ["오늘", "긴급", "지남"]:
+        return "background-color: #f8d7da; color: #8a1f2d; font-weight: bold;"
+    if s in ["임박", "예정"]:
+        return "background-color: #fff4cc; color: #7a5c00; font-weight: bold;"
+    return ""
+
+
+def show_alert_table(df: pd.DataFrame):
+    if df.empty:
+        st.info("해당 알림이 없습니다.")
+        return
+
+    styled = df.style
+    if "상태표시" in df.columns:
+        styled = styled.map(style_alert_value, subset=["상태표시"])
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+
 def to_excel_bytes(df_dict):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -381,7 +485,6 @@ def download_section(title, df, filename_prefix):
         file_name=f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
 
 # =========================================================
 # 화면 함수
@@ -434,12 +537,46 @@ def page_dashboard():
     contract_df = load_df("계약단지")
     tasks_df = load_tasks_df()
     schedule_df = load_schedule_df()
+    tax_df = load_tax_alert_df()
+    meeting_df = load_meeting_alert_df()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("영업현황", len(sales_df))
     c2.metric("가능단지", len(possible_df))
     c3.metric("입찰공고", len(bid_df))
     c4.metric("계약단지", len(contract_df))
+
+    st.divider()
+
+    c5, c6, c7 = st.columns(3)
+
+    tax_temp = tax_df.copy()
+    if not tax_temp.empty:
+        tax_temp["예정일_dt"] = pd.to_datetime(tax_temp["예정일"], errors="coerce")
+        tax_temp["상태표시"] = tax_temp.apply(lambda r: make_alert_status(r["예정일_dt"], r["상태"]), axis=1)
+        tax_pending_count = len(tax_temp[tax_temp["상태표시"].isin(["지남", "오늘", "긴급", "임박"])])
+    else:
+        tax_pending_count = 0
+
+    meeting_temp = meeting_df.copy()
+    if not meeting_temp.empty:
+        meeting_temp["입대의일자_dt"] = pd.to_datetime(meeting_temp["입대의일자"], errors="coerce")
+        meeting_temp["상태표시"] = meeting_temp.apply(lambda r: make_alert_status(r["입대의일자_dt"], r["상태"]), axis=1)
+        meeting_pending_count = len(meeting_temp[meeting_temp["상태표시"].isin(["지남", "오늘", "긴급", "임박"])])
+    else:
+        meeting_pending_count = 0
+
+    schedule_temp = schedule_df.copy()
+    if not schedule_temp.empty:
+        schedule_temp["날짜_dt"] = pd.to_datetime(schedule_temp["날짜"], errors="coerce")
+        schedule_temp["상태표시"] = schedule_temp["날짜_dt"].apply(lambda x: make_alert_status(x, ""))
+        schedule_pending_count = len(schedule_temp[schedule_temp["상태표시"].isin(["지남", "오늘", "긴급", "임박"])])
+    else:
+        schedule_pending_count = 0
+
+    c5.metric("세금계산서 알림", tax_pending_count)
+    c6.metric("입대의 알림", meeting_pending_count)
+    c7.metric("일정 알림", schedule_pending_count)
 
     st.divider()
 
@@ -1015,6 +1152,178 @@ def page_week():
         st.dataframe(week_df, use_container_width=True, hide_index=True)
 
 
+def page_alerts():
+    st.title("🚨 영업 알림")
+
+    tax_df = load_tax_alert_df()
+    meeting_df = load_meeting_alert_df()
+    schedule_df = load_schedule_df()
+
+    st.subheader("1. 알림 요약")
+    c1, c2, c3 = st.columns(3)
+
+    tax_temp = tax_df.copy()
+    if not tax_temp.empty:
+        tax_temp["예정일_dt"] = pd.to_datetime(tax_temp["예정일"], errors="coerce")
+        tax_temp["상태표시"] = tax_temp.apply(lambda r: make_alert_status(r["예정일_dt"], r["상태"]), axis=1)
+        tax_pending = tax_temp[tax_temp["상태표시"].isin(["지남", "오늘", "긴급", "임박"])]
+    else:
+        tax_pending = pd.DataFrame()
+
+    meeting_temp = meeting_df.copy()
+    if not meeting_temp.empty:
+        meeting_temp["입대의일자_dt"] = pd.to_datetime(meeting_temp["입대의일자"], errors="coerce")
+        meeting_temp["상태표시"] = meeting_temp.apply(lambda r: make_alert_status(r["입대의일자_dt"], r["상태"]), axis=1)
+        meeting_pending = meeting_temp[meeting_temp["상태표시"].isin(["지남", "오늘", "긴급", "임박"])]
+    else:
+        meeting_pending = pd.DataFrame()
+
+    schedule_temp = schedule_df.copy()
+    if not schedule_temp.empty:
+        schedule_temp["날짜_dt"] = pd.to_datetime(schedule_temp["날짜"], errors="coerce")
+        schedule_temp["상태표시"] = schedule_temp["날짜_dt"].apply(lambda x: make_alert_status(x, ""))
+        schedule_pending = schedule_temp[schedule_temp["상태표시"].isin(["지남", "오늘", "긴급", "임박"])]
+    else:
+        schedule_pending = pd.DataFrame()
+
+    c1.metric("세금계산서 알림", len(tax_pending))
+    c2.metric("입대의 알림", len(meeting_pending))
+    c3.metric("일정 알림", len(schedule_pending))
+
+    st.divider()
+
+    st.subheader("2. 세금계산서 발행 알림 등록")
+    col1, col2, col3 = st.columns(3)
+    tax_site = col1.text_input("단지명", key="tax_site")
+    tax_date = col2.date_input("발행 예정일", key="tax_date")
+    tax_note = col3.text_input("비고", key="tax_note")
+
+    if st.button("세금계산서 알림 추가"):
+        if tax_site.strip():
+            new_row = {
+                "등록일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "작성자": current_user_name(),
+                "단지명": tax_site.strip(),
+                "예정일": str(tax_date),
+                "상태": "예정",
+                "비고": tax_note.strip(),
+            }
+            tax_df = pd.concat([tax_df, pd.DataFrame([new_row])], ignore_index=True)
+            save_tax_alert_df(tax_df)
+            st.success("세금계산서 알림이 등록되었습니다.")
+            st.rerun()
+
+    st.subheader("세금계산서 알림 목록")
+    if tax_df.empty:
+        st.info("등록된 세금계산서 알림이 없습니다.")
+    else:
+        view_tax = tax_df.copy()
+        view_tax["예정일_dt"] = pd.to_datetime(view_tax["예정일"], errors="coerce")
+        view_tax["D-Day"] = view_tax["예정일_dt"].apply(get_d_day_label)
+        view_tax["상태표시"] = view_tax.apply(lambda r: make_alert_status(r["예정일_dt"], r["상태"]), axis=1)
+        view_tax = view_tax.sort_values(["예정일_dt", "등록일시"], ascending=[True, False])
+        show_alert_table(view_tax[["단지명", "예정일", "D-Day", "상태", "상태표시", "비고", "작성자"]])
+
+        tax_options = [
+            f"{idx} | {row['단지명']} | {row['예정일']} | {row['상태']}"
+            for idx, row in tax_df.iterrows()
+        ]
+        selected_tax = st.selectbox("상태 변경할 세금계산서 알림", tax_options, key="tax_select")
+        new_tax_status = st.selectbox("변경 상태", ["예정", "완료"], key="tax_status_change")
+
+        col_a, col_b = st.columns(2)
+        if col_a.button("세금계산서 상태 저장"):
+            idx = int(selected_tax.split(" | ")[0])
+            tax_df.loc[idx, "상태"] = new_tax_status
+            save_tax_alert_df(tax_df)
+            st.success("세금계산서 상태가 변경되었습니다.")
+            st.rerun()
+
+        if col_b.button("세금계산서 알림 삭제"):
+            idx = int(selected_tax.split(" | ")[0])
+            tax_df = tax_df.drop(index=idx).reset_index(drop=True)
+            save_tax_alert_df(tax_df)
+            st.success("삭제되었습니다.")
+            st.rerun()
+
+    st.divider()
+
+    st.subheader("3. 입대의 일정 알림 등록")
+    col1, col2, col3 = st.columns(3)
+    meeting_site = col1.text_input("단지명", key="meeting_site")
+    meeting_date = col2.date_input("입대의 날짜", key="meeting_date")
+    meeting_note = col3.text_input("비고", key="meeting_note")
+
+    if st.button("입대의 알림 추가"):
+        if meeting_site.strip():
+            new_row = {
+                "등록일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "작성자": current_user_name(),
+                "단지명": meeting_site.strip(),
+                "입대의일자": str(meeting_date),
+                "상태": "예정",
+                "비고": meeting_note.strip(),
+            }
+            meeting_df = pd.concat([meeting_df, pd.DataFrame([new_row])], ignore_index=True)
+            save_meeting_alert_df(meeting_df)
+            st.success("입대의 알림이 등록되었습니다.")
+            st.rerun()
+
+    st.subheader("입대의 알림 목록")
+    if meeting_df.empty:
+        st.info("등록된 입대의 알림이 없습니다.")
+    else:
+        view_meeting = meeting_df.copy()
+        view_meeting["입대의일자_dt"] = pd.to_datetime(view_meeting["입대의일자"], errors="coerce")
+        view_meeting["D-Day"] = view_meeting["입대의일자_dt"].apply(get_d_day_label)
+        view_meeting["상태표시"] = view_meeting.apply(lambda r: make_alert_status(r["입대의일자_dt"], r["상태"]), axis=1)
+        view_meeting = view_meeting.sort_values(["입대의일자_dt", "등록일시"], ascending=[True, False])
+        show_alert_table(view_meeting[["단지명", "입대의일자", "D-Day", "상태", "상태표시", "비고", "작성자"]])
+
+        meeting_options = [
+            f"{idx} | {row['단지명']} | {row['입대의일자']} | {row['상태']}"
+            for idx, row in meeting_df.iterrows()
+        ]
+        selected_meeting = st.selectbox("상태 변경할 입대의 알림", meeting_options, key="meeting_select")
+        new_meeting_status = st.selectbox("변경 상태", ["예정", "완료"], key="meeting_status_change")
+
+        col_a, col_b = st.columns(2)
+        if col_a.button("입대의 상태 저장"):
+            idx = int(selected_meeting.split(" | ")[0])
+            meeting_df.loc[idx, "상태"] = new_meeting_status
+            save_meeting_alert_df(meeting_df)
+            st.success("입대의 상태가 변경되었습니다.")
+            st.rerun()
+
+        if col_b.button("입대의 알림 삭제"):
+            idx = int(selected_meeting.split(" | ")[0])
+            meeting_df = meeting_df.drop(index=idx).reset_index(drop=True)
+            save_meeting_alert_df(meeting_df)
+            st.success("삭제되었습니다.")
+            st.rerun()
+
+    st.divider()
+
+    st.subheader("4. 일반 일정 임박 알림")
+    if schedule_df.empty:
+        st.info("등록된 일정이 없습니다.")
+    else:
+        view_schedule = schedule_df.copy()
+        view_schedule["날짜_dt"] = pd.to_datetime(view_schedule["날짜"], errors="coerce")
+        view_schedule["D-Day"] = view_schedule["날짜_dt"].apply(get_d_day_label)
+        view_schedule["상태표시"] = view_schedule["날짜_dt"].apply(lambda x: make_alert_status(x, ""))
+        view_schedule = view_schedule.sort_values(["날짜_dt", "등록일시"], ascending=[True, False])
+
+        urgent_schedule = view_schedule[
+            view_schedule["상태표시"].isin(["지남", "오늘", "긴급", "임박"])
+        ]
+
+        if urgent_schedule.empty:
+            st.info("임박한 일정이 없습니다.")
+        else:
+            show_alert_table(urgent_schedule[["일정명", "날짜", "D-Day", "상태표시", "작성자"]])
+
+
 def page_admin_tools():
     st.title("🛠 관리자 도구")
 
@@ -1061,6 +1370,8 @@ def page_admin_tools():
 def main():
     init_tasks_file()
     init_schedule_file()
+    init_tax_alert_file()
+    init_meeting_alert_file()
 
     st.sidebar.title("메뉴")
     st.sidebar.write(f"로그인: {st.session_state.username}")
@@ -1077,6 +1388,7 @@ def main():
         "오늘 할 일",
         "일정 관리",
         "주간 일정",
+        "영업 알림",
     ]
 
     if is_admin():
@@ -1107,6 +1419,8 @@ def main():
         page_schedule()
     elif menu == "주간 일정":
         page_week()
+    elif menu == "영업 알림":
+        page_alerts()
     elif menu == "관리자 도구":
         page_admin_tools()
 
