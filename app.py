@@ -1,13 +1,8 @@
-
 import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
 from pathlib import Path
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
 
 # -----------------------------
 # 기본 설정
@@ -214,16 +209,6 @@ def apply_complex_filter(df, key_prefix="main"):
 
     if "구역" in filtered_df.columns and selected_area != "전체":
         filtered_df = filtered_df[filtered_df["구역"].astype(str) == selected_area]
-    if st.button("📄 PDF 리포트 생성"):
-        pdf_file = generate_pdf(df, st.session_state.username)
-
-        with open(pdf_file, "rb") as f:
-            st.download_button(
-            label="📥 PDF 다운로드",
-            data=f,
-            file_name=pdf_file,
-            mime="application/pdf"
-        )
 
     return filtered_df
 
@@ -390,45 +375,6 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
         use_container_width=True,
         key=f"download_{key_prefix}"
     )
-def generate_pdf(df, apt_name="단지"):
-    file_name = f"{apt_name}_위험도_리포트.pdf"
-
-    doc = SimpleDocTemplate(file_name, pagesize=A4)
-    styles = getSampleStyleSheet()
-
-    elements = []
-
-    # 제목
-    elements.append(Paragraph(f"{apt_name} 위험도 분석 리포트", styles['Title']))
-    elements.append(Spacer(1, 20))
-
-    # 요약
-    total = len(df)
-    danger = len(df[df['판정'] == '위험'])
-    caution = len(df[df['판정'] == '주의'])
-    normal = len(df[df['판정'] == '정상'])
-
-    elements.append(Paragraph(f"전체: {total}건", styles['Normal']))
-    elements.append(Paragraph(f"위험: {danger}건", styles['Normal']))
-    elements.append(Paragraph(f"주의: {caution}건", styles['Normal']))
-    elements.append(Paragraph(f"정상: {normal}건", styles['Normal']))
-    elements.append(Spacer(1, 20))
-
-    # 테이블 데이터
-    table_data = [df.columns.tolist()] + df.values.tolist()
-
-    table = Table(table_data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.grey),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black)
-    ]))
-
-    elements.append(table)
-
-    doc.build(elements)
-
-    return file_name
 
 def admin_dashboard(df):
     st.title("관리자 대시보드")
@@ -863,4 +809,6 @@ def main():
 # -----------------------------
 if __name__ == "__main__":
     main()
+
+
 
