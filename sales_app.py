@@ -18,6 +18,8 @@ FILE_MAP = {
     "가능단지": os.path.join(DATA_DIR, "possible_sites.csv"),
     "입찰공고": os.path.join(DATA_DIR, "bid_sites.csv"),
     "계약단지": os.path.join(DATA_DIR, "contract_sites.csv"),
+    "할일": os.path.join(DATA_DIR, "tasks.csv"),
+    "일정": os.path.join(DATA_DIR, "schedule.csv"),
 }
 
 # =========================================================
@@ -40,13 +42,6 @@ if "role" not in st.session_state:
     st.session_state.role = ""
 if "display_name" not in st.session_state:
     st.session_state.display_name = ""
-
-# 일정 / 할일
-if "tasks" not in st.session_state:
-    st.session_state.tasks = []
-
-if "schedule" not in st.session_state:
-    st.session_state.schedule = []
 
 # =========================================================
 # 공통 함수
@@ -120,6 +115,46 @@ def load_df(key: str) -> pd.DataFrame:
         except Exception:
             return pd.read_csv(path).fillna("")
     return pd.DataFrame()
+
+
+def init_tasks_file():
+    if not os.path.exists(FILE_MAP["할일"]):
+        df = pd.DataFrame(columns=["등록일시", "작성자", "할일"])
+        save_df("할일", df)
+
+
+def init_schedule_file():
+    if not os.path.exists(FILE_MAP["일정"]):
+        df = pd.DataFrame(columns=["등록일시", "작성자", "일정명", "날짜"])
+        save_df("일정", df)
+
+
+def load_tasks_df():
+    init_tasks_file()
+    df = load_df("할일")
+    needed = ["등록일시", "작성자", "할일"]
+    for col in needed:
+        if col not in df.columns:
+            df[col] = ""
+    return df[needed].copy()
+
+
+def save_tasks_df(df: pd.DataFrame):
+    save_df("할일", df[["등록일시", "작성자", "할일"]].copy())
+
+
+def load_schedule_df():
+    init_schedule_file()
+    df = load_df("일정")
+    needed = ["등록일시", "작성자", "일정명", "날짜"]
+    for col in needed:
+        if col not in df.columns:
+            df[col] = ""
+    return df[needed].copy()
+
+
+def save_schedule_df(df: pd.DataFrame):
+    save_df("일정", df[["등록일시", "작성자", "일정명", "날짜"]].copy())
 
 
 def make_unique_columns(cols):
@@ -397,6 +432,8 @@ def page_dashboard():
     possible_df = load_df("가능단지")
     bid_df = load_df("입찰공고")
     contract_df = load_df("계약단지")
+    tasks_df = load_tasks_df()
+    schedule_df = load_schedule_df()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("영업현황", len(sales_df))
@@ -426,29 +463,31 @@ def page_dashboard():
 
     st.divider()
     st.subheader("📝 오늘 할 일")
-    if len(st.session_state.tasks) == 0:
-        st.info("등록된 오늘 할 일이 없습니다.")
+
+    if tasks_df.empty:
+        st.info("등록된 할 일이 없습니다.")
     else:
-        for task in st.session_state.tasks:
-            st.write(f"- {task}")
+        show_tasks = tasks_df.tail(10).iloc[::-1]
+        st.dataframe(show_tasks, use_container_width=True, hide_index=True)
 
     st.divider()
     st.subheader("📅 최근 7일 일정")
-    if len(st.session_state.schedule) == 0:
+
+    if schedule_df.empty:
         st.info("등록된 일정이 없습니다.")
     else:
-        sch_df = pd.DataFrame(st.session_state.schedule)
-        sch_df["date"] = pd.to_datetime(sch_df["date"], errors="coerce")
+        temp_df = schedule_df.copy()
+        temp_df["날짜"] = pd.to_datetime(temp_df["날짜"], errors="coerce")
         today = pd.to_datetime(datetime.today().date())
-        week_df = sch_df[
-            (sch_df["date"] >= today) &
-            (sch_df["date"] <= today + pd.Timedelta(days=7))
-        ].sort_values("date")
+        week_df = temp_df[
+            (temp_df["날짜"] >= today) &
+            (temp_df["날짜"] <= today + pd.Timedelta(days=7))
+        ].sort_values("날짜")
 
         if week_df.empty:
             st.info("최근 7일 일정이 없습니다.")
         else:
-            st.dataframe(week_df, use_container_width=True)
+            st.dataframe(week_df, use_container_width=True, hide_index=True)
 
 
 def page_sales_status():
@@ -868,60 +907,87 @@ def page_new_sales_entry():
 def page_tasks():
     st.title("📝 오늘 할 일")
 
+    df = load_tasks_df()
+
     new_task = st.text_input("할 일 입력")
 
-    if st.button("추가"):
+    if st.button("할 일 추가"):
         if new_task.strip():
-            st.session_state.tasks.append(new_task.strip())
+            new_row = {
+                "등록일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "작성자": current_user_name(),
+                "할일": new_task.strip(),
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            save_tasks_df(df)
             st.success("추가 완료")
             st.rerun()
 
     st.write("---")
 
-    if len(st.session_state.tasks) == 0:
+    if df.empty:
         st.info("등록된 할 일이 없습니다.")
     else:
-        for i, task in enumerate(st.session_state.tasks):
-            col1, col2 = st.columns([8, 1])
-            col1.write(task)
-            if col2.button("삭제", key=f"task_{i}"):
-                st.session_state.tasks.pop(i)
-                st.rerun()
+        view_df = df.iloc[::-1].reset_index(drop=True)
+        st.dataframe(view_df, use_container_width=True, hide_index=True)
+
+        st.subheader("할 일 삭제")
+        option_list = [
+            f"{idx} | {row['작성자']} | {row['할일']}"
+            for idx, row in df.iterrows()
+        ]
+        selected_item = st.selectbox("삭제할 할 일 선택", option_list)
+
+        if st.button("선택 할 일 삭제"):
+            delete_idx = int(selected_item.split(" | ")[0])
+            df = df.drop(index=delete_idx).reset_index(drop=True)
+            save_tasks_df(df)
+            st.success("삭제 완료")
+            st.rerun()
 
 
 def page_schedule():
     st.title("📅 일정 관리")
+
+    df = load_schedule_df()
 
     title = st.text_input("일정 제목")
     selected_date = st.date_input("날짜")
 
     if st.button("일정 추가"):
         if title.strip():
-            st.session_state.schedule.append({
-                "title": title.strip(),
-                "date": str(selected_date)
-            })
+            new_row = {
+                "등록일시": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "작성자": current_user_name(),
+                "일정명": title.strip(),
+                "날짜": str(selected_date),
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            save_schedule_df(df)
             st.success("일정 추가 완료")
             st.rerun()
 
     st.write("---")
 
-    if len(st.session_state.schedule) == 0:
+    if df.empty:
         st.info("등록된 일정이 없습니다.")
     else:
-        df = pd.DataFrame(st.session_state.schedule)
-        st.dataframe(df, use_container_width=True)
+        temp_df = df.copy()
+        temp_df["날짜정렬"] = pd.to_datetime(temp_df["날짜"], errors="coerce")
+        temp_df = temp_df.sort_values(["날짜정렬", "등록일시"], ascending=[True, False]).drop(columns=["날짜정렬"])
+        st.dataframe(temp_df, use_container_width=True, hide_index=True)
 
         st.subheader("일정 삭제")
         option_list = [
-            f"{i + 1}. {item['date']} | {item['title']}"
-            for i, item in enumerate(st.session_state.schedule)
+            f"{idx} | {row['날짜']} | {row['일정명']}"
+            for idx, row in df.iterrows()
         ]
         selected_item = st.selectbox("삭제할 일정 선택", option_list)
 
         if st.button("선택 일정 삭제"):
-            idx = option_list.index(selected_item)
-            st.session_state.schedule.pop(idx)
+            delete_idx = int(selected_item.split(" | ")[0])
+            df = df.drop(index=delete_idx).reset_index(drop=True)
+            save_schedule_df(df)
             st.success("삭제 완료")
             st.rerun()
 
@@ -929,24 +995,24 @@ def page_schedule():
 def page_week():
     st.title("📈 주간 일정")
 
-    if not st.session_state.schedule:
+    df = load_schedule_df()
+    if df.empty:
         st.info("일정 없음")
         return
 
-    df = pd.DataFrame(st.session_state.schedule)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
+    df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce")
     today = pd.to_datetime(datetime.today().date())
 
     week_df = df[
-        (df["date"] >= today) &
-        (df["date"] <= today + pd.Timedelta(days=7))
+        (df["날짜"] >= today) &
+        (df["날짜"] <= today + pd.Timedelta(days=7))
     ]
 
     if week_df.empty:
         st.info("최근 7일 일정이 없습니다.")
     else:
-        st.dataframe(week_df.sort_values("date"), use_container_width=True)
+        week_df = week_df.sort_values("날짜")
+        st.dataframe(week_df, use_container_width=True, hide_index=True)
 
 
 def page_admin_tools():
@@ -993,6 +1059,9 @@ def page_admin_tools():
 # 메인
 # =========================================================
 def main():
+    init_tasks_file()
+    init_schedule_file()
+
     st.sidebar.title("메뉴")
     st.sidebar.write(f"로그인: {st.session_state.username}")
     st.sidebar.write(f"권한: {st.session_state.role}")
