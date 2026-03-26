@@ -4,10 +4,13 @@ import os
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
+
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # -----------------------------
 # 기본 설정
@@ -337,6 +340,24 @@ def create_test_danger_data():
     ])
     return process_dataframe(test_df, "test_data.csv")
 
+def register_korean_font():
+    font_candidates = [
+        "NanumGothic.ttf",
+        "NotoSansKR-Regular.ttf",
+        "Malgun.ttf",
+        "malgun.ttf",
+    ]
+
+    for font_path in font_candidates:
+        if os.path.exists(font_path):
+            try:
+                pdfmetrics.registerFont(TTFont("KoreanFont", font_path))
+                return "KoreanFont"
+            except:
+                pass
+
+    return "Helvetica"
+
 def generate_pdf_bytes(df, apt_name="단지"):
     if df is None or df.empty:
         return None
@@ -346,9 +367,24 @@ def generate_pdf_bytes(df, apt_name="단지"):
     if "판정" not in pdf_df.columns and "위험도" in pdf_df.columns:
         pdf_df["판정"] = pdf_df["위험도"].apply(classify_risk)
 
+    font_name = register_korean_font()
+
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=20,
+        leftMargin=20,
+        topMargin=30,
+        bottomMargin=20
+    )
+
     styles = getSampleStyleSheet()
+    styles["Title"].fontName = font_name
+    styles["Normal"].fontName = font_name
+    styles["Title"].fontSize = 16
+    styles["Normal"].fontSize = 10
+
     elements = []
 
     elements.append(Paragraph(f"{apt_name} 위험도 분석 리포트", styles["Title"]))
@@ -373,12 +409,19 @@ def generate_pdf_bytes(df, apt_name="단지"):
 
     table_data = [display_df.columns.tolist()] + display_df.values.tolist()
 
-    table = Table(table_data, repeatRows=1)
+    col_count = len(display_df.columns)
+    available_width = 555
+    col_width = max(45, int(available_width / max(col_count, 1)))
+    col_widths = [col_width] * col_count
+
+    table = Table(table_data, repeatRows=1, colWidths=col_widths)
     table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
         ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("LEADING", (0, 0), (-1, -1), 8),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
 
