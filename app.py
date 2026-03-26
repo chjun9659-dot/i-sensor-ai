@@ -57,6 +57,13 @@ COLOR_MAP = {
     "전체": "#5B6C8F",
 }
 
+STATUS_BG_MAP = {
+    "위험": "#FDECEC",
+    "주의": "#FFF8E1",
+    "정상": "#ECFDF3",
+    "전체": "#EEF2FF",
+}
+
 CARD_STYLE = {
     "bg": "#F8FAFC",
     "border": "#E2E8F0",
@@ -106,14 +113,17 @@ def metric_card(title, value, icon="", color="#5B6C8F", subtitle=""):
             padding: 20px 22px;
             min-height: 125px;
             box-shadow: 0 4px 14px rgba(15,23,42,0.05);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         ">
-            <div style="font-size: 17px; font-weight: 700; color: {CARD_STYLE['title']};">
+            <div style="font-size: 17px; font-weight: 700; color: {CARD_STYLE['title']}; min-height: 28px;">
                 {icon} {title}
             </div>
-            <div style="font-size: 38px; font-weight: 900; margin-top: 10px; color: {color};">
+            <div style="font-size: 38px; font-weight: 900; margin-top: 10px; color: {color}; min-height: 52px;">
                 {value}
             </div>
-            <div style="font-size: 13px; color: {CARD_STYLE['sub']}; margin-top: 4px;">
+            <div style="font-size: 13px; color: {CARD_STYLE['sub']}; margin-top: 4px; min-height: 18px;">
                 {subtitle}
             </div>
         </div>
@@ -154,6 +164,53 @@ def info_box(text):
         """,
         unsafe_allow_html=True
     )
+
+def filter_status_box():
+    status = st.session_state.dashboard_filter
+    bg = STATUS_BG_MAP.get(status, "#EEF2FF")
+    border = COLOR_MAP.get(status, "#5B6C8F")
+
+    st.markdown(
+        f"""
+        <div style="
+            background:{bg};
+            border:2px solid {border};
+            color:#1F2A44;
+            border-radius:14px;
+            padding:14px 16px;
+            margin-bottom:14px;
+            font-weight:800;
+        ">
+            현재 필터: {status}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def selected_filter_chip(label, selected_value):
+    active = st.session_state.dashboard_filter == selected_value
+    if active:
+        st.markdown(
+            f"""
+            <div style="
+                text-align:center;
+                margin-top:6px;
+                margin-bottom:2px;
+            ">
+                <span style="
+                    background:{COLOR_MAP.get(selected_value, '#5B6C8F')};
+                    color:white;
+                    padding:4px 12px;
+                    border-radius:999px;
+                    font-size:12px;
+                    font-weight:700;
+                ">선택됨</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
 
 # -----------------------------
 # 공통 기능 함수
@@ -393,11 +450,30 @@ def show_danger_alert(df):
 
     df = apply_user_complex_scope(df)
     danger_df = df[df["판정"] == "위험"].copy()
+    danger_count = len(danger_df)
 
-    if danger_df.empty:
+    if danger_count == 0:
+        st.markdown(
+            """
+            <div style="
+                background:#ECFDF3;
+                border:2px solid #2ECC71;
+                border-radius:18px;
+                padding:18px;
+                margin-bottom:18px;
+                text-align:center;
+                font-size:20px;
+                font-weight:800;
+                color:#1E8449;
+                box-shadow: 0 8px 20px rgba(46,204,113,0.08);
+            ">
+                ✅ 현재 위험 데이터가 없습니다. (안정 상태)
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         return
 
-    danger_count = len(danger_df)
     first = danger_df.iloc[0]
 
     dong_text = first.get("동", "")
@@ -545,13 +621,18 @@ def generate_pdf_bytes(df, apt_name="단지"):
 # -----------------------------
 # 차트 / 표 스타일 함수
 # -----------------------------
-def make_status_chart(df):
+def make_status_chart(df, selected_filter="전체"):
     if df is None or df.empty or "판정" not in df.columns:
         return None
 
     order = ["정상", "주의", "위험"]
     chart_df = df["판정"].value_counts().reindex(order, fill_value=0).reset_index()
     chart_df.columns = ["판정", "건수"]
+
+    if selected_filter in ["정상", "주의", "위험"]:
+        chart_df["강조"] = chart_df["판정"].apply(lambda x: 1 if x == selected_filter else 0)
+    else:
+        chart_df["강조"] = 1
 
     chart = (
         alt.Chart(chart_df)
@@ -567,13 +648,18 @@ def make_status_chart(df):
                 ),
                 legend=None
             ),
+            opacity=alt.condition(
+                alt.datum.강조 == 1,
+                alt.value(1.0),
+                alt.value(0.35)
+            ),
             tooltip=["판정", "건수"]
         )
         .properties(height=340)
     )
     return chart
 
-def make_complex_chart(df):
+def make_complex_chart(df, selected_filter="전체"):
     if df is None or df.empty or "판정" not in df.columns or "단지명" not in df.columns:
         return None
 
@@ -582,6 +668,11 @@ def make_complex_chart(df):
         .size()
         .reset_index(name="건수")
     )
+
+    if selected_filter in ["정상", "주의", "위험"]:
+        chart_df["강조"] = chart_df["판정"].apply(lambda x: 1 if x == selected_filter else 0)
+    else:
+        chart_df["강조"] = 1
 
     chart = (
         alt.Chart(chart_df)
@@ -596,6 +687,11 @@ def make_complex_chart(df):
                     range=[COLOR_MAP["정상"], COLOR_MAP["주의"], COLOR_MAP["위험"]]
                 ),
                 title="판정"
+            ),
+            opacity=alt.condition(
+                alt.datum.강조 == 1,
+                alt.value(1.0),
+                alt.value(0.35)
             ),
             tooltip=["단지명", "판정", "건수"]
         )
@@ -615,6 +711,12 @@ def style_dataframe(df):
         return [""] * len(row)
 
     return df.style.apply(highlight_row, axis=1)
+
+def get_filtered_section_title():
+    current_filter = st.session_state.dashboard_filter
+    if current_filter == "전체":
+        return "필터 결과"
+    return f"{current_filter} 데이터 상세"
 
 # -----------------------------
 # 결과 표시 섹션
@@ -655,14 +757,14 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
 
     with ch1:
         section_title("판정별 건수")
-        status_chart = make_status_chart(scoped_df)
+        status_chart = make_status_chart(scoped_df, "전체")
         if status_chart is not None:
             st.altair_chart(status_chart, use_container_width=True)
 
     with ch2:
         if "단지명" in scoped_df.columns:
             section_title("단지별 현황")
-            complex_chart = make_complex_chart(scoped_df)
+            complex_chart = make_complex_chart(scoped_df, "전체")
             if complex_chart is not None:
                 st.altair_chart(complex_chart, use_container_width=True)
 
@@ -761,6 +863,26 @@ def admin_dashboard(df):
             """,
             unsafe_allow_html=True
         )
+    else:
+        st.markdown(
+            """
+            <div style="
+                background:#ECFDF3;
+                border:2px solid #2ECC71;
+                border-radius:18px;
+                padding:18px;
+                margin-bottom:18px;
+                text-align:center;
+                font-size:20px;
+                font-weight:800;
+                color:#1E8449;
+                box-shadow: 0 8px 20px rgba(46,204,113,0.08);
+            ">
+                ✅ 현재 위험 데이터가 없습니다. (안정 상태)
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
@@ -782,24 +904,28 @@ def admin_dashboard(df):
         if st.button("🔴 위험 보기", key="dash_danger", use_container_width=True):
             st.session_state.dashboard_filter = "위험"
             st.rerun()
+        selected_filter_chip("위험", "위험")
 
     with b2:
         if st.button("🟡 주의 보기", key="dash_warning", use_container_width=True):
             st.session_state.dashboard_filter = "주의"
             st.rerun()
+        selected_filter_chip("주의", "주의")
 
     with b3:
         if st.button("🟢 정상 보기", key="dash_normal", use_container_width=True):
             st.session_state.dashboard_filter = "정상"
             st.rerun()
+        selected_filter_chip("정상", "정상")
 
     with b4:
         if st.button("📋 전체 보기", key="dash_all", use_container_width=True):
             st.session_state.dashboard_filter = "전체"
             st.rerun()
+        selected_filter_chip("전체", "전체")
 
     st.markdown("---")
-    info_box(f"현재 필터: <b>{st.session_state.dashboard_filter}</b>")
+    filter_status_box()
 
     current_filter = st.session_state.dashboard_filter
 
@@ -816,19 +942,19 @@ def admin_dashboard(df):
 
     with chart_left:
         section_title("대시보드 판정별 건수")
-        status_chart = make_status_chart(df)
+        status_chart = make_status_chart(df, current_filter)
         if status_chart is not None:
             st.altair_chart(status_chart, use_container_width=True)
 
     with chart_right:
         if "단지명" in df.columns:
             section_title("대시보드 단지별 현황")
-            complex_chart = make_complex_chart(df)
+            complex_chart = make_complex_chart(df, current_filter)
             if complex_chart is not None:
                 st.altair_chart(complex_chart, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("필터 결과")
+    st.subheader(get_filtered_section_title())
     filtered_df = apply_complex_filter(filtered_df, key_prefix="dashboard")
 
     if filtered_df.empty:
