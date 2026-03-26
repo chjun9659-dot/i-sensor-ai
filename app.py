@@ -1,8 +1,13 @@
 import streamlit as st
 import pandas as pd
 import os
+from io import BytesIO
 from datetime import datetime
 from pathlib import Path
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 
 # -----------------------------
 # 기본 설정
@@ -332,6 +337,62 @@ def create_test_danger_data():
     ])
     return process_dataframe(test_df, "test_data.csv")
 
+def generate_pdf_bytes(df, apt_name="단지"):
+    if df is None or df.empty:
+        return None
+
+    pdf_df = df.copy()
+
+    if "판정" not in pdf_df.columns and "위험도" in pdf_df.columns:
+        pdf_df["판정"] = pdf_df["위험도"].apply(classify_risk)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph(f"{apt_name} 위험도 분석 리포트", styles["Title"]))
+    elements.append(Spacer(1, 16))
+
+    total = len(pdf_df)
+    danger = len(pdf_df[pdf_df["판정"] == "위험"]) if "판정" in pdf_df.columns else 0
+    warning = len(pdf_df[pdf_df["판정"] == "주의"]) if "판정" in pdf_df.columns else 0
+    normal = len(pdf_df[pdf_df["판정"] == "정상"]) if "판정" in pdf_df.columns else 0
+
+    elements.append(Paragraph(f"전체: {total}건", styles["Normal"]))
+    elements.append(Paragraph(f"위험: {danger}건", styles["Normal"]))
+    elements.append(Paragraph(f"주의: {warning}건", styles["Normal"]))
+    elements.append(Paragraph(f"정상: {normal}건", styles["Normal"]))
+    elements.append(Spacer(1, 16))
+
+    display_df = pdf_df.copy().fillna("").astype(str)
+
+    max_rows = 30
+    if len(display_df) > max_rows:
+        display_df = display_df.head(max_rows)
+
+    table_data = [display_df.columns.tolist()] + display_df.values.tolist()
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+
+    elements.append(table)
+
+    if len(pdf_df) > max_rows:
+        elements.append(Spacer(1, 12))
+        elements.append(Paragraph(f"* 표에는 상위 {max_rows}건만 표시되었습니다.", styles["Normal"]))
+
+    doc.build(elements)
+    pdf_data = buffer.getvalue()
+    buffer.close()
+    return pdf_data
+
 def render_result_section(df, key_prefix="result", file_name="분석결과.csv"):
     if df is None or df.empty:
         st.warning("표시할 데이터가 없습니다.")
@@ -366,15 +427,33 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
         complex_chart_df = scoped_df.groupby(["단지명", "판정"]).size().unstack(fill_value=0)
         st.bar_chart(complex_chart_df)
 
-    csv_data = filtered_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-    st.download_button(
-        label="현재 화면 결과 다운로드",
-        data=csv_data,
-        file_name=file_name,
-        mime="text/csv",
-        use_container_width=True,
-        key=f"download_{key_prefix}"
-    )
+    download_name_base = Path(file_name).stem
+    pdf_complex_name = st.session_state.user_complex if st.session_state.user_complex != "전체" else "전체"
+
+    btn1, btn2 = st.columns(2)
+
+    with btn1:
+        csv_data = filtered_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        st.download_button(
+            label="📥 현재 화면 결과 CSV 다운로드",
+            data=csv_data,
+            file_name=file_name,
+            mime="text/csv",
+            use_container_width=True,
+            key=f"download_csv_{key_prefix}"
+        )
+
+    with btn2:
+        pdf_data = generate_pdf_bytes(filtered_df, pdf_complex_name)
+        if pdf_data:
+            st.download_button(
+                label="📄 현재 화면 PDF 리포트 다운로드",
+                data=pdf_data,
+                file_name=f"{download_name_base}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"download_pdf_{key_prefix}"
+            )
 
 def admin_dashboard(df):
     st.title("관리자 대시보드")
@@ -581,6 +660,17 @@ def admin_dashboard(df):
         st.warning("조건에 맞는 데이터가 없습니다.")
     else:
         st.dataframe(filtered_df, use_container_width=True, height=450)
+
+        pdf_data = generate_pdf_bytes(filtered_df, "관리자대시보드")
+        if pdf_data:
+            st.download_button(
+                label="📄 대시보드 PDF 리포트 다운로드",
+                data=pdf_data,
+                file_name="관리자대시보드_리포트.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="dashboard_pdf_download"
+            )
 
     st.markdown("---")
     st.subheader("📜 위험 발생 이력")
