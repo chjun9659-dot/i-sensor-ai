@@ -1,11 +1,31 @@
 import os
+import re
+import io
 from datetime import datetime
-from io import BytesIO
 
 import pandas as pd
 import streamlit as st
 
+
+def clean_text(value):
+    if pd.isna(value):
+        return ""
+    if isinstance(value, str):
+        return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", value)
+    return value
+
+
 st.set_page_config(page_title="윤우 영업관리 시스템", layout="wide")
+
+# =========================================================
+# 구글 스프레드시트 자동 연동 설정
+# =========================================================
+GOOGLESHEET_URLS = {
+    "영업현황": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=167508641#gid=167508641",
+    "가능단지": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=1108943027#gid=1108943027",
+    "입찰공고": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=243967548#gid=243967548",
+    "계약단지": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=2071693391#gid=2071693391",
+}
 
 # =========================================================
 # 기본 경로 / 파일 설정
@@ -45,9 +65,42 @@ if "role" not in st.session_state:
 if "display_name" not in st.session_state:
     st.session_state.display_name = ""
 
+
 # =========================================================
-# 공통 함수
+# 구글 시트 관련 함수
 # =========================================================
+def convert_google_sheet_url_to_csv(url: str) -> str:
+    """
+    구글 스프레드시트 edit 링크를 csv 읽기용 링크로 변환
+    """
+    sheet_match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
+    gid_match = re.search(r"gid=(\d+)", url)
+
+    if not sheet_match:
+        raise ValueError("구글 스프레드시트 문서 ID를 찾을 수 없습니다.")
+
+    sheet_id = sheet_match.group(1)
+    gid = gid_match.group(1) if gid_match else "0"
+
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
+
+
+def make_unique_columns(cols):
+    seen = {}
+    new_cols = []
+    for c in cols:
+        base = str(c).strip()
+        if base == "":
+            base = "빈컬럼"
+        if base not in seen:
+            seen[base] = 0
+            new_cols.append(base)
+        else:
+            seen[base] += 1
+            new_cols.append(f"{base}_{seen[base]}")
+    return new_cols
+
+
 def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     cols = []
@@ -56,14 +109,14 @@ def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
         if c.startswith("Unnamed"):
             c = ""
         cols.append(c)
-    df.columns = cols
+    df.columns = make_unique_columns(cols)
     return df
 
 
 def remove_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
     keep_cols = []
     for col in df.columns:
-        if str(col).strip() == "":
+        if str(col).strip() in ["", "빈컬럼"]:
             continue
         if not df[col].isna().all():
             keep_cols.append(col)
@@ -104,12 +157,31 @@ def preprocess_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=60)
+def load_google_sheet_data(sheet_name: str) -> pd.DataFrame:
+    if sheet_name not in GOOGLESHEET_URLS:
+        return pd.DataFrame()
+
+    csv_url = convert_google_sheet_url_to_csv(GOOGLESHEET_URLS[sheet_name])
+
+    try:
+        df = pd.read_csv(csv_url, header=1)
+    except Exception:
+        df = pd.read_csv(csv_url, header=0)
+
+    df = preprocess_df(df)
+    return df
+
+
+# =========================================================
+# 공통 파일 함수
+# =========================================================
 def save_df(key: str, df: pd.DataFrame):
     path = FILE_MAP[key]
     df.to_csv(path, index=False, encoding="utf-8-sig")
 
 
-def load_df(key: str) -> pd.DataFrame:
+def load_local_df(key: str) -> pd.DataFrame:
     path = FILE_MAP[key]
     if os.path.exists(path):
         try:
@@ -117,6 +189,23 @@ def load_df(key: str) -> pd.DataFrame:
         except Exception:
             return pd.read_csv(path).fillna("")
     return pd.DataFrame()
+
+
+def load_df(key: str) -> pd.DataFrame:
+    """
+    4개 메인 데이터는 구글시트 우선 사용
+    나머지는 로컬 CSV 사용
+    """
+    if key in GOOGLESHEET_URLS:
+        try:
+            df = load_google_sheet_data(key)
+            if not df.empty:
+                save_df(key, df)
+                return df
+        except Exception as e:
+            st.warning(f"{key} 구글시트 불러오기 실패, 로컬 백업 사용: {e}")
+
+    return load_local_df(key)
 
 
 def init_tasks_file():
@@ -145,7 +234,7 @@ def init_meeting_alert_file():
 
 def load_tasks_df():
     init_tasks_file()
-    df = load_df("할일")
+    df = load_local_df("할일")
     needed = ["등록일시", "작성자", "할일"]
     for col in needed:
         if col not in df.columns:
@@ -159,7 +248,7 @@ def save_tasks_df(df: pd.DataFrame):
 
 def load_schedule_df():
     init_schedule_file()
-    df = load_df("일정")
+    df = load_local_df("일정")
     needed = ["등록일시", "작성자", "일정명", "날짜"]
     for col in needed:
         if col not in df.columns:
@@ -173,7 +262,7 @@ def save_schedule_df(df: pd.DataFrame):
 
 def load_tax_alert_df():
     init_tax_alert_file()
-    df = load_df("세금알림")
+    df = load_local_df("세금알림")
     needed = ["등록일시", "작성자", "단지명", "예정일", "상태", "비고"]
     for col in needed:
         if col not in df.columns:
@@ -187,7 +276,7 @@ def save_tax_alert_df(df: pd.DataFrame):
 
 def load_meeting_alert_df():
     init_meeting_alert_file()
-    df = load_df("입대의알림")
+    df = load_local_df("입대의알림")
     needed = ["등록일시", "작성자", "단지명", "입대의일자", "상태", "비고"]
     for col in needed:
         if col not in df.columns:
@@ -197,22 +286,6 @@ def load_meeting_alert_df():
 
 def save_meeting_alert_df(df: pd.DataFrame):
     save_df("입대의알림", df[["등록일시", "작성자", "단지명", "입대의일자", "상태", "비고"]].copy())
-
-
-def make_unique_columns(cols):
-    seen = {}
-    new_cols = []
-    for c in cols:
-        base = str(c).strip()
-        if base == "":
-            base = "빈컬럼"
-        if base not in seen:
-            seen[base] = 0
-            new_cols.append(base)
-        else:
-            seen[base] += 1
-            new_cols.append(f"{base}_{seen[base]}")
-    return new_cols
 
 
 def read_excel_sheet(uploaded_file, sheet_name: str) -> pd.DataFrame:
@@ -455,43 +528,96 @@ def show_alert_table(df: pd.DataFrame):
     st.dataframe(styled, use_container_width=True, hide_index=True)
 
 
-def to_excel_bytes(df_dict):
-    output = BytesIO()
+# =========================================================
+# 엑셀 다운로드 함수 (복구 완료)
+# =========================================================
+def to_excel_bytes(data_dict):
+    output = io.BytesIO()
+
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        for sheet_name, df in df_dict.items():
-            df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        written_count = 0
+
+        for sheet_name, df in data_dict.items():
+            try:
+                if df is None:
+                    continue
+
+                if not isinstance(df, pd.DataFrame):
+                    df = pd.DataFrame(df)
+
+                df2 = df.copy()
+
+                if len(df2.columns) == 0 and df2.empty:
+                    df2 = pd.DataFrame({"안내": ["데이터 없음"]})
+                else:
+                    df2.columns = [clean_text(str(col)) for col in df2.columns]
+                    df2 = df2.apply(lambda col: col.map(clean_text))
+
+                safe_sheet_name = str(sheet_name).strip() if sheet_name else f"Sheet{written_count + 1}"
+                safe_sheet_name = clean_text(safe_sheet_name)
+                if not safe_sheet_name:
+                    safe_sheet_name = f"Sheet{written_count + 1}"
+                safe_sheet_name = safe_sheet_name[:31]
+
+                df2.to_excel(writer, index=False, sheet_name=safe_sheet_name)
+                written_count += 1
+
+            except Exception as e:
+                error_df = pd.DataFrame({
+                    "오류": [f"{sheet_name} 시트 저장 실패"],
+                    "상세": [str(e)]
+                })
+                fail_sheet_name = f"오류{written_count + 1}"[:31]
+                error_df.to_excel(writer, index=False, sheet_name=fail_sheet_name)
+                written_count += 1
+
+        if written_count == 0:
+            pd.DataFrame({"안내": ["저장할 데이터가 없습니다."]}).to_excel(
+                writer, index=False, sheet_name="안내"
+            )
+
     output.seek(0)
     return output.getvalue()
 
 
-def download_section(title, df, filename_prefix):
-    st.subheader(title)
-    if df.empty:
-        st.info("다운로드할 데이터가 없습니다.")
-        return
+def download_section(title, df, file_name):
+    try:
+        if df is None:
+            st.warning(f"{title} 데이터 없음")
+            return
 
-    csv_data = df.to_csv(index=False, encoding="utf-8-sig")
-    st.download_button(
-        label="CSV 다운로드",
-        data=csv_data,
-        file_name=f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-        mime="text/csv",
-    )
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
 
-    excel_data = to_excel_bytes({title: df})
-    st.download_button(
-        label="엑셀 다운로드",
-        data=excel_data,
-        file_name=f"{filename_prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+        if df.empty:
+            st.warning(f"{title} 데이터 없음")
+            return
+
+        excel_data = to_excel_bytes({title: df})
+
+        if not excel_data:
+            st.error(f"{title} 다운로드 데이터 생성 실패")
+            return
+
+        st.download_button(
+            label=f"📥 {title} 다운로드",
+            data=excel_data,
+            file_name=f"{file_name}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"download_{file_name}_{title}"
+        )
+
+    except Exception as e:
+        st.error(f"{title} 다운로드 오류: {e}")
+
 
 # =========================================================
 # 화면 함수
 # =========================================================
 def page_import():
     st.title("📥 데이터 가져오기")
-    st.write("`온도 감지센서.xlsx` 파일을 업로드하면 영업현황 / 가능단지 / 입찰공고 / 계약단지 데이터를 프로그램으로 가져옵니다.")
+    st.write("기존 엑셀 가져오기 기능도 유지됩니다.")
+    st.write("현재 메인 데이터는 구글 스프레드시트에서 자동 불러옵니다.")
 
     uploaded_file = st.file_uploader("엑셀 파일 업로드 (.xlsx)", type=["xlsx"])
 
@@ -508,7 +634,7 @@ def page_import():
 
     st.subheader("현재 저장된 데이터 현황")
     for key in FILE_MAP.keys():
-        df = load_df(key)
+        df = load_df(key) if key in GOOGLESHEET_URLS else load_local_df(key)
         st.write(f"- {key}: {len(df)}건")
 
     st.divider()
@@ -516,16 +642,33 @@ def page_import():
 
     export_dict = {}
     for key in FILE_MAP.keys():
-        export_dict[key] = load_df(key)
+        export_dict[key] = load_df(key) if key in GOOGLESHEET_URLS else load_local_df(key)
 
     if any(len(df) > 0 for df in export_dict.values()):
         all_excel = to_excel_bytes(export_dict)
-        st.download_button(
-            label="전체 데이터 엑셀 백업 다운로드",
-            data=all_excel,
-            file_name=f"윤우영업관리_전체백업_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+
+        if all_excel:
+            st.download_button(
+                label="전체 데이터 엑셀 백업 다운로드",
+                data=all_excel,
+                file_name=f"윤우영업관리_전체백업_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_all_backup"
+            )
+        else:
+            st.error("전체 데이터 백업 파일 생성 실패")
+    else:
+        st.info("백업할 데이터가 없습니다.")
+
+    st.divider()
+    st.subheader("구글시트 연결 확인")
+
+    for sheet_name in GOOGLESHEET_URLS.keys():
+        try:
+            df = load_google_sheet_data(sheet_name)
+            st.success(f"{sheet_name}: 연결 성공 ({len(df)}건)")
+        except Exception as e:
+            st.error(f"{sheet_name}: 연결 실패 - {e}")
 
 
 def page_dashboard():
@@ -580,11 +723,13 @@ def page_dashboard():
 
     st.divider()
 
-    if not sales_df.empty and "담당자" in sales_df.columns:
-        st.subheader("영업현황 담당자별 건수")
-        count_df = sales_df["담당자"].astype(str).replace("", "미지정").value_counts().reset_index()
-        count_df.columns = ["담당자", "건수"]
-        st.dataframe(count_df, use_container_width=True)
+    if not sales_df.empty:
+        manager_col = get_manager_column(sales_df)
+        if manager_col:
+            st.subheader("영업현황 담당자별 건수")
+            count_df = sales_df[manager_col].astype(str).replace("", "미지정").value_counts().reset_index()
+            count_df.columns = ["담당자", "건수"]
+            st.dataframe(count_df, use_container_width=True)
 
     if not possible_df.empty and "결과" in possible_df.columns:
         st.subheader("가능단지 결과 현황")
@@ -592,11 +737,13 @@ def page_dashboard():
         result_df.columns = ["결과", "건수"]
         st.dataframe(result_df, use_container_width=True)
 
-    if not contract_df.empty and "영업담당" in contract_df.columns:
-        st.subheader("계약단지 담당자별 건수")
-        contract_count = contract_df["영업담당"].astype(str).replace("", "미지정").value_counts().reset_index()
-        contract_count.columns = ["영업담당", "건수"]
-        st.dataframe(contract_count, use_container_width=True)
+    if not contract_df.empty:
+        manager_col = get_manager_column(contract_df)
+        if manager_col:
+            st.subheader("계약단지 담당자별 건수")
+            contract_count = contract_df[manager_col].astype(str).replace("", "미지정").value_counts().reset_index()
+            contract_count.columns = ["영업담당", "건수"]
+            st.dataframe(contract_count, use_container_width=True)
 
     st.divider()
     st.subheader("📝 오늘 할 일")
@@ -632,7 +779,7 @@ def page_sales_status():
 
     df = load_df("영업현황")
     if df.empty:
-        st.warning("영업현황 데이터가 없습니다. 먼저 '데이터 가져오기'에서 엑셀을 불러와 주세요.")
+        st.warning("영업현황 데이터가 없습니다.")
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -642,8 +789,10 @@ def page_sales_status():
     상품 = "전체"
     진행여부 = "전체"
 
-    if "담당자" in df.columns:
-        담당자 = col1.selectbox("담당자", ["전체"] + sorted([x for x in df["담당자"].astype(str).unique() if x != ""]))
+    manager_col = get_manager_column(df)
+
+    if manager_col:
+        담당자 = col1.selectbox("담당자", ["전체"] + sorted([x for x in df[manager_col].astype(str).unique() if x != ""]))
     if "지역" in df.columns:
         지역 = col2.selectbox("지역", ["전체"] + sorted([x for x in df["지역"].astype(str).unique() if x != ""]))
     if "상품" in df.columns:
@@ -653,15 +802,17 @@ def page_sales_status():
 
     keyword = st.text_input("검색", placeholder="아파트명, 관리코드, 주소, 내용 등 검색")
 
-    df2 = filtered_df(
-        df,
-        {
-            "담당자": 담당자,
-            "지역": 지역,
-            "상품": 상품,
-            "진행여부": 진행여부,
-        },
-    )
+    filters = {}
+    if manager_col:
+        filters[manager_col] = 담당자
+    if "지역" in df.columns:
+        filters["지역"] = 지역
+    if "상품" in df.columns:
+        filters["상품"] = 상품
+    if "진행여부" in df.columns:
+        filters["진행여부"] = 진행여부
+
+    df2 = filtered_df(df, filters)
     df2 = keyword_filter(df2, keyword)
 
     st.write(f"조회 건수: {len(df2)}건")
@@ -669,85 +820,13 @@ def page_sales_status():
 
     download_section("영업현황_필터결과", df2, "영업현황")
 
-    st.divider()
-    st.subheader("진행여부 / 확인 수정")
-
-    site_col = get_site_column(df)
-    if not site_col:
-        st.info("단지명 컬럼을 찾지 못했습니다.")
-        return
-
-    selectable_df = df.copy()
-    if not is_admin():
-        manager_col = get_manager_column(df)
-        if manager_col:
-            me = current_user_name().strip()
-            selectable_df = df[
-                (df[manager_col].astype(str).str.strip() == me) |
-                (df[manager_col].astype(str).str.strip() == "") |
-                (df[manager_col].astype(str).str.strip() == "미지정")
-            ]
-
-    if selectable_df.empty:
-        st.warning("수정 가능한 데이터가 없습니다.")
-        return
-
-    selected_site = st.selectbox("대상 단지 선택", selectable_df[site_col].astype(str).tolist())
-
-    target_idx_list = df[df[site_col].astype(str) == str(selected_site)].index
-    if len(target_idx_list) == 0:
-        st.warning("선택한 단지를 찾을 수 없습니다.")
-        return
-
-    row_index = target_idx_list[0]
-
-    if not can_edit_row(df, row_index):
-        st.error("이 단지는 현재 본인 담당이 아니므로 수정할 수 없습니다.")
-        return
-
-    c1, c2 = st.columns(2)
-    new_status = c1.text_input("새 진행여부")
-    new_check = c2.text_input("새 확인 내용")
-
-    if st.button("영업현황 저장"):
-        if "진행여부" in df.columns and new_status.strip():
-            df.loc[row_index, "진행여부"] = new_status.strip()
-        if "확인" in df.columns and new_check.strip():
-            df.loc[row_index, "확인"] = new_check.strip()
-
-        save_df("영업현황", df)
-        st.success("수정되었습니다.")
-        st.rerun()
-
-    st.divider()
-    st.subheader("담당자 변경")
-    if is_admin():
-        manager_col = get_manager_column(df)
-        if manager_col:
-            selected_site_admin = st.selectbox(
-                "담당자 변경 대상",
-                df[site_col].astype(str).tolist(),
-                key="sales_manager_change_target"
-            )
-            new_manager = st.text_input("새 담당자", key="sales_new_manager")
-
-            if st.button("담당자 변경 저장"):
-                idx = df[df[site_col].astype(str) == str(selected_site_admin)].index
-                if len(idx) > 0 and new_manager.strip():
-                    df.loc[idx[0], manager_col] = new_manager.strip()
-                    save_df("영업현황", df)
-                    st.success("담당자가 변경되었습니다.")
-                    st.rerun()
-    else:
-        st.info("담당자 변경은 관리자만 가능합니다.")
-
 
 def page_possible_sites():
     st.title("✅ 가능단지")
 
     df = load_df("가능단지")
     if df.empty:
-        st.warning("가능단지 데이터가 없습니다. 먼저 '데이터 가져오기'에서 엑셀을 불러와 주세요.")
+        st.warning("가능단지 데이터가 없습니다.")
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -757,8 +836,10 @@ def page_possible_sites():
     상품 = "전체"
     결과 = "전체"
 
-    if "영업담당" in df.columns:
-        담당자 = col1.selectbox("영업담당", ["전체"] + sorted([x for x in df["영업담당"].astype(str).unique() if x != ""]))
+    manager_col = get_manager_column(df)
+
+    if manager_col:
+        담당자 = col1.selectbox("영업담당", ["전체"] + sorted([x for x in df[manager_col].astype(str).unique() if x != ""]))
     if "지역" in df.columns:
         지역 = col2.selectbox("지역", ["전체"] + sorted([x for x in df["지역"].astype(str).unique() if x != ""]))
     if "상품" in df.columns:
@@ -768,15 +849,17 @@ def page_possible_sites():
 
     keyword = st.text_input("검색", placeholder="아파트명, 관리코드, 진행사항, 비고 등 검색", key="possible_search")
 
-    df2 = filtered_df(
-        df,
-        {
-            "영업담당": 담당자,
-            "지역": 지역,
-            "상품": 상품,
-            "결과": 결과,
-        },
-    )
+    filters = {}
+    if manager_col:
+        filters[manager_col] = 담당자
+    if "지역" in df.columns:
+        filters["지역"] = 지역
+    if "상품" in df.columns:
+        filters["상품"] = 상품
+    if "결과" in df.columns:
+        filters["결과"] = 결과
+
+    df2 = filtered_df(df, filters)
     df2 = keyword_filter(df2, keyword)
 
     st.write(f"조회 건수: {len(df2)}건")
@@ -784,50 +867,13 @@ def page_possible_sites():
 
     download_section("가능단지_필터결과", df2, "가능단지")
 
-    st.divider()
-    st.subheader("결과 수정")
-
-    site_col = get_best_column(df, ["아파트명", "아파트 명", "단지명"])
-    manager_col = get_manager_column(df)
-
-    if site_col:
-        selectable_df = df.copy()
-        if not is_admin() and manager_col:
-            me = current_user_name().strip()
-            selectable_df = df[
-                (df[manager_col].astype(str).str.strip() == me) |
-                (df[manager_col].astype(str).str.strip() == "") |
-                (df[manager_col].astype(str).str.strip() == "미지정")
-            ]
-
-        if selectable_df.empty:
-            st.warning("수정 가능한 데이터가 없습니다.")
-            return
-
-        selected_site = st.selectbox("단지 선택", selectable_df[site_col].astype(str).tolist())
-        new_result = st.text_input("새 결과값 (예: 계약, 부결, 진행중)", key="possible_result")
-
-        idx = df[df[site_col].astype(str) == str(selected_site)].index
-        if len(idx) > 0 and not can_edit_row(df, idx[0]):
-            st.error("이 단지는 현재 본인 담당이 아니므로 수정할 수 없습니다.")
-            return
-
-        if st.button("가능단지 저장"):
-            if len(idx) > 0:
-                row_index = idx[0]
-                if "결과" in df.columns and new_result.strip():
-                    df.loc[row_index, "결과"] = new_result.strip()
-                    save_df("가능단지", df)
-                    st.success("수정되었습니다.")
-                    st.rerun()
-
 
 def page_bid_sites():
     st.title("📝 입찰공고단지")
 
     df = load_df("입찰공고")
     if df.empty:
-        st.warning("입찰공고 데이터가 없습니다. 먼저 '데이터 가져오기'에서 엑셀을 불러와 주세요.")
+        st.warning("입찰공고 데이터가 없습니다.")
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -837,8 +883,10 @@ def page_bid_sites():
     상품 = "전체"
     판매형태 = "전체"
 
-    if "영업담당" in df.columns:
-        담당자 = col1.selectbox("영업담당", ["전체"] + sorted([x for x in df["영업담당"].astype(str).unique() if x != ""]))
+    manager_col = get_manager_column(df)
+
+    if manager_col:
+        담당자 = col1.selectbox("영업담당", ["전체"] + sorted([x for x in df[manager_col].astype(str).unique() if x != ""]))
     if "지역" in df.columns:
         지역 = col2.selectbox("지역", ["전체"] + sorted([x for x in df["지역"].astype(str).unique() if x != ""]))
     if "상품" in df.columns:
@@ -848,15 +896,17 @@ def page_bid_sites():
 
     keyword = st.text_input("검색", placeholder="아파트명, 관리코드, 특이사항 등 검색", key="bid_search")
 
-    df2 = filtered_df(
-        df,
-        {
-            "영업담당": 담당자,
-            "지역": 지역,
-            "상품": 상품,
-            "판매형태": 판매형태,
-        },
-    )
+    filters = {}
+    if manager_col:
+        filters[manager_col] = 담당자
+    if "지역" in df.columns:
+        filters["지역"] = 지역
+    if "상품" in df.columns:
+        filters["상품"] = 상품
+    if "판매형태" in df.columns:
+        filters["판매형태"] = 판매형태
+
+    df2 = filtered_df(df, filters)
     df2 = keyword_filter(df2, keyword)
 
     st.write(f"조회 건수: {len(df2)}건")
@@ -870,7 +920,7 @@ def page_contract_sites():
 
     df = load_df("계약단지")
     if df.empty:
-        st.warning("계약단지 데이터가 없습니다. 먼저 '데이터 가져오기'에서 엑셀을 불러와 주세요.")
+        st.warning("계약단지 데이터가 없습니다.")
         return
 
     col1, col2, col3, col4 = st.columns(4)
@@ -880,8 +930,10 @@ def page_contract_sites():
     상품 = "전체"
     시공여부 = "전체"
 
-    if "영업담당" in df.columns:
-        담당자 = col1.selectbox("영업담당", ["전체"] + sorted([x for x in df["영업담당"].astype(str).unique() if x != ""]))
+    manager_col = get_manager_column(df)
+
+    if manager_col:
+        담당자 = col1.selectbox("영업담당", ["전체"] + sorted([x for x in df[manager_col].astype(str).unique() if x != ""]))
     if "지역" in df.columns:
         지역 = col2.selectbox("지역", ["전체"] + sorted([x for x in df["지역"].astype(str).unique() if x != ""]))
     if "상품" in df.columns:
@@ -891,15 +943,17 @@ def page_contract_sites():
 
     keyword = st.text_input("검색", placeholder="아파트명, 관리코드, 주소 등 검색", key="contract_search")
 
-    df2 = filtered_df(
-        df,
-        {
-            "영업담당": 담당자,
-            "지역": 지역,
-            "상품": 상품,
-            "시공여부": 시공여부,
-        },
-    )
+    filters = {}
+    if manager_col:
+        filters[manager_col] = 담당자
+    if "지역" in df.columns:
+        filters["지역"] = 지역
+    if "상품" in df.columns:
+        filters["상품"] = 상품
+    if "시공여부" in df.columns:
+        filters["시공여부"] = 시공여부
+
+    df2 = filtered_df(df, filters)
     df2 = keyword_filter(df2, keyword)
 
     st.write(f"조회 건수: {len(df2)}건")
@@ -907,138 +961,11 @@ def page_contract_sites():
 
     download_section("계약단지_필터결과", df2, "계약단지")
 
-    st.divider()
-    st.subheader("시공여부 / 세금계산서 발행 수정")
-
-    site_col = get_best_column(df, ["아파트명", "아파트 명", "단지명"])
-    manager_col = get_manager_column(df)
-
-    if site_col:
-        selectable_df = df.copy()
-        if not is_admin() and manager_col:
-            me = current_user_name().strip()
-            selectable_df = df[
-                (df[manager_col].astype(str).str.strip() == me) |
-                (df[manager_col].astype(str).str.strip() == "") |
-                (df[manager_col].astype(str).str.strip() == "미지정")
-            ]
-
-        if selectable_df.empty:
-            st.warning("수정 가능한 데이터가 없습니다.")
-            return
-
-        selected_site = st.selectbox("단지 선택", selectable_df[site_col].astype(str).tolist(), key="contract_site")
-        target_idx = df[df[site_col].astype(str) == str(selected_site)].index
-        if len(target_idx) == 0:
-            return
-
-        row_index = target_idx[0]
-        if not can_edit_row(df, row_index):
-            st.error("이 단지는 현재 본인 담당이 아니므로 수정할 수 없습니다.")
-            return
-
-        col_a, col_b = st.columns(2)
-        new_build = col_a.text_input("새 시공여부", key="new_build")
-        new_tax = col_b.text_input("새 세금계산서 발행", key="new_tax")
-
-        if st.button("계약단지 저장"):
-            if "시공여부" in df.columns and new_build.strip():
-                df.loc[row_index, "시공여부"] = new_build.strip()
-            if "세금계산서 발행" in df.columns and new_tax.strip():
-                df.loc[row_index, "세금계산서 발행"] = new_tax.strip()
-
-            save_df("계약단지", df)
-            st.success("수정되었습니다.")
-            st.rerun()
-
-    st.divider()
-    st.subheader("계약단지 담당자 변경")
-    if is_admin():
-        if site_col and manager_col:
-            selected_site_admin = st.selectbox(
-                "담당자 변경 대상",
-                df[site_col].astype(str).tolist(),
-                key="contract_manager_change_target"
-            )
-            new_manager = st.text_input("새 담당자", key="contract_new_manager")
-
-            if st.button("계약단지 담당자 변경 저장"):
-                idx = df[df[site_col].astype(str) == str(selected_site_admin)].index
-                if len(idx) > 0 and new_manager.strip():
-                    df.loc[idx[0], manager_col] = new_manager.strip()
-                    save_df("계약단지", df)
-                    st.success("담당자가 변경되었습니다.")
-                    st.rerun()
-    else:
-        st.info("담당자 변경은 관리자만 가능합니다.")
-
 
 def page_new_sales_entry():
     st.title("➕ 영업현황 신규 등록")
-    st.write("새 영업건을 직접 추가할 수 있습니다.")
-
-    df = load_df("영업현황")
-
-    관리코드 = st.text_input("관리코드")
-    아파트명 = st.text_input("아파트 명")
-    대표전화 = st.text_input("대표전화")
-    지역 = st.text_input("지역")
-    주소 = st.text_input("주소")
-    상품 = st.selectbox("상품", ["", "화재예방시스템", "충전기", "번들(충+화)"])
-    영업형태 = st.text_input("영업형태")
-    담당자 = st.text_input("담당자", value=current_user_name())
-    수량 = st.text_input("수량")
-    날짜 = st.text_input("날짜", value=datetime.now().strftime("%Y-%m-%d"))
-    티엠결과 = st.text_area("티엠결과")
-    가능성 = st.selectbox("가능성", ["", "상", "중", "하"])
-    방문현황 = st.text_input("방문현황")
-    진행여부 = st.text_input("진행여부")
-    내용 = st.text_area("내용")
-    확인 = st.text_input("확인")
-    계약날짜 = st.text_input("계약날짜")
-
-    if not df.empty:
-        dup_msg = duplicate_check_message(df, 관리코드, 아파트명)
-        if dup_msg:
-            st.warning(dup_msg)
-
-    if st.button("신규 등록 저장"):
-        if df.empty:
-            df = pd.DataFrame(columns=[
-                "관리코드", "아파트 명", "대표전화", "지역", "주소", "상품", "영업형태",
-                "담당자", "수량", "날짜", "티엠결과", "가능성", "방문현황",
-                "진행여부", "내용", "확인", "계약날짜"
-            ])
-
-        dup_msg = duplicate_check_message(df, 관리코드, 아파트명)
-        if dup_msg:
-            st.error(dup_msg)
-            return
-
-        new_row = {
-            "관리코드": 관리코드.strip(),
-            "아파트 명": 아파트명.strip(),
-            "대표전화": 대표전화.strip(),
-            "지역": 지역.strip(),
-            "주소": 주소.strip(),
-            "상품": 상품.strip(),
-            "영업형태": 영업형태.strip(),
-            "담당자": 담당자.strip(),
-            "수량": 수량.strip(),
-            "날짜": 날짜.strip(),
-            "티엠결과": 티엠결과.strip(),
-            "가능성": 가능성.strip(),
-            "방문현황": 방문현황.strip(),
-            "진행여부": 진행여부.strip(),
-            "내용": 내용.strip(),
-            "확인": 확인.strip(),
-            "계약날짜": 계약날짜.strip(),
-        }
-
-        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        save_df("영업현황", df)
-        st.success("영업현황에 신규 등록되었습니다.")
-        st.rerun()
+    st.info("현재 메인 영업현황은 구글시트 자동연동 방식입니다.")
+    st.write("신규 등록은 구글 스프레드시트에서 직접 입력하시는 것을 권장드립니다.")
 
 
 def page_tasks():
