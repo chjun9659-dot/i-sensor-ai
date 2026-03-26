@@ -1,9 +1,11 @@
-import streamlit as st
-import pandas as pd
 import os
 from io import BytesIO
 from datetime import datetime
 from pathlib import Path
+
+import altair as alt
+import pandas as pd
+import streamlit as st
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
@@ -46,14 +48,116 @@ for key, value in DEFAULT_SESSION.items():
         st.session_state[key] = value
 
 # -----------------------------
-# 공통 함수
+# 색상 테마
+# -----------------------------
+COLOR_MAP = {
+    "위험": "#E74C3C",
+    "주의": "#F4B400",
+    "정상": "#2ECC71",
+    "전체": "#5B6C8F",
+}
+
+CARD_STYLE = {
+    "bg": "#F8FAFC",
+    "border": "#E2E8F0",
+    "title": "#1F2A44",
+    "sub": "#64748B"
+}
+
+# -----------------------------
+# 공통 UI 함수
 # -----------------------------
 def show_logo():
     if os.path.exists(LOGO_PATH):
         col1, col2, col3 = st.columns([3, 2, 3])
         with col2:
-            st.image(LOGO_PATH, width=120)
+            st.image(LOGO_PATH, width=170)
 
+def show_top_banner():
+    st.markdown(
+        """
+        <div style="
+            background: linear-gradient(135deg, #1F2A44 0%, #2E5BBA 100%);
+            padding: 22px 26px;
+            border-radius: 20px;
+            margin-bottom: 16px;
+            color: white;
+            box-shadow: 0 8px 24px rgba(31,42,68,0.18);
+        ">
+            <div style="font-size: 30px; font-weight: 800; margin-bottom: 6px;">
+                화재 위험도 자동 분석 프로그램
+            </div>
+            <div style="font-size: 15px; opacity: 0.92;">
+                윤우테크 / 아이센서 분석 대시보드
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def metric_card(title, value, icon="", color="#5B6C8F", subtitle=""):
+    st.markdown(
+        f"""
+        <div style="
+            background: {CARD_STYLE['bg']};
+            border: 1px solid {CARD_STYLE['border']};
+            border-left: 8px solid {color};
+            border-radius: 18px;
+            padding: 20px 22px;
+            min-height: 125px;
+            box-shadow: 0 4px 14px rgba(15,23,42,0.05);
+        ">
+            <div style="font-size: 17px; font-weight: 700; color: {CARD_STYLE['title']};">
+                {icon} {title}
+            </div>
+            <div style="font-size: 38px; font-weight: 900; margin-top: 10px; color: {color};">
+                {value}
+            </div>
+            <div style="font-size: 13px; color: {CARD_STYLE['sub']}; margin-top: 4px;">
+                {subtitle}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def section_title(text):
+    st.markdown(
+        f"""
+        <div style="
+            margin-top: 10px;
+            margin-bottom: 10px;
+            font-size: 22px;
+            font-weight: 800;
+            color: #1F2A44;
+        ">
+            {text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def info_box(text):
+    st.markdown(
+        f"""
+        <div style="
+            background: #EFF6FF;
+            border: 1px solid #BFDBFE;
+            color: #1D4ED8;
+            border-radius: 14px;
+            padding: 14px 16px;
+            margin-bottom: 14px;
+            font-weight: 600;
+        ">
+            {text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# -----------------------------
+# 공통 기능 함수
+# -----------------------------
 def get_role_name(role):
     if role == "admin":
         return "관리자"
@@ -65,7 +169,9 @@ def get_role_name(role):
 
 def login():
     show_logo()
-    st.title("🔐 로그인")
+    show_top_banner()
+
+    st.markdown("### 🔐 로그인")
     st.write("아이디와 비밀번호를 입력하세요.")
 
     username = st.text_input("아이디")
@@ -185,7 +291,7 @@ def apply_complex_filter(df, key_prefix="main"):
     selected_area = "전체"
 
     if st.session_state.role == "client" and st.session_state.user_complex != "전체":
-        st.info(f"현재 계정은 **{st.session_state.user_complex}** 단지만 조회 가능합니다.")
+        info_box(f"현재 계정은 <b>{st.session_state.user_complex}</b> 단지만 조회 가능합니다.")
     else:
         complex_list = ["전체"] + sorted([str(x) for x in filtered_df["단지명"].dropna().unique()])
         with col0:
@@ -304,23 +410,23 @@ def show_danger_alert(df):
         if value not in ["", "-", "nan", "None"]:
             location_parts.append(value)
 
+    location_html = ""
     if location_parts:
         location_html = f"<br>📍 위치: {' / '.join(location_parts)}"
-    else:
-        location_html = ""
 
     st.markdown(
         f"""
         <div style="
-            background:#ffebee;
-            border:2px solid #ff2b2b;
-            border-radius:18px;
-            padding:20px;
-            margin-bottom:18px;
-            text-align:center;
-            font-size:22px;
-            font-weight:800;
-            color:#b00020;
+            background: linear-gradient(135deg, #FDECEC 0%, #FFF2F2 100%);
+            border: 2px solid #E74C3C;
+            border-radius: 18px;
+            padding: 20px;
+            margin-bottom: 18px;
+            text-align: center;
+            font-size: 22px;
+            font-weight: 800;
+            color: #B42318;
+            box-shadow: 0 8px 20px rgba(231,76,60,0.10);
         ">
             🚨 위험 데이터 {danger_count}건 발생
             {location_html}
@@ -417,7 +523,7 @@ def generate_pdf_bytes(df, apt_name="단지"):
     table = Table(table_data, repeatRows=1, colWidths=col_widths)
     table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (-1, -1), font_name),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495E")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
         ("FONTSIZE", (0, 0), (-1, -1), 7),
@@ -436,6 +542,83 @@ def generate_pdf_bytes(df, apt_name="단지"):
     buffer.close()
     return pdf_data
 
+# -----------------------------
+# 차트 / 표 스타일 함수
+# -----------------------------
+def make_status_chart(df):
+    if df is None or df.empty or "판정" not in df.columns:
+        return None
+
+    order = ["정상", "주의", "위험"]
+    chart_df = df["판정"].value_counts().reindex(order, fill_value=0).reset_index()
+    chart_df.columns = ["판정", "건수"]
+
+    chart = (
+        alt.Chart(chart_df)
+        .mark_bar(cornerRadiusTopLeft=10, cornerRadiusTopRight=10)
+        .encode(
+            x=alt.X("판정:N", sort=order, title="판정"),
+            y=alt.Y("건수:Q", title="건수"),
+            color=alt.Color(
+                "판정:N",
+                scale=alt.Scale(
+                    domain=["정상", "주의", "위험"],
+                    range=[COLOR_MAP["정상"], COLOR_MAP["주의"], COLOR_MAP["위험"]]
+                ),
+                legend=None
+            ),
+            tooltip=["판정", "건수"]
+        )
+        .properties(height=340)
+    )
+    return chart
+
+def make_complex_chart(df):
+    if df is None or df.empty or "판정" not in df.columns or "단지명" not in df.columns:
+        return None
+
+    chart_df = (
+        df.groupby(["단지명", "판정"])
+        .size()
+        .reset_index(name="건수")
+    )
+
+    chart = (
+        alt.Chart(chart_df)
+        .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8)
+        .encode(
+            x=alt.X("단지명:N", title="단지명"),
+            y=alt.Y("건수:Q", title="건수"),
+            color=alt.Color(
+                "판정:N",
+                scale=alt.Scale(
+                    domain=["정상", "주의", "위험"],
+                    range=[COLOR_MAP["정상"], COLOR_MAP["주의"], COLOR_MAP["위험"]]
+                ),
+                title="판정"
+            ),
+            tooltip=["단지명", "판정", "건수"]
+        )
+        .properties(height=340)
+    )
+    return chart
+
+def style_dataframe(df):
+    def highlight_row(row):
+        result = row.get("판정", "")
+        if result == "위험":
+            return ["background-color: #FDECEC"] * len(row)
+        elif result == "주의":
+            return ["background-color: #FFF8E1"] * len(row)
+        elif result == "정상":
+            return ["background-color: #ECFDF3"] * len(row)
+        return [""] * len(row)
+
+    return df.style.apply(highlight_row, axis=1)
+
+# -----------------------------
+# 결과 표시 섹션
+# -----------------------------
 def render_result_section(df, key_prefix="result", file_name="분석결과.csv"):
     if df is None or df.empty:
         st.warning("표시할 데이터가 없습니다.")
@@ -444,31 +627,47 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
     scoped_df = apply_user_complex_scope(df)
     show_danger_alert(scoped_df)
 
-    st.subheader("분석 결과")
+    section_title("분석 결과")
     filtered_df = apply_complex_filter(scoped_df, key_prefix=key_prefix)
 
     if filtered_df.empty:
         st.warning("조건에 맞는 데이터가 없습니다.")
         return
 
-    st.dataframe(filtered_df, use_container_width=True, height=500)
+    total_count = len(scoped_df)
+    danger_count = len(scoped_df[scoped_df["판정"] == "위험"])
+    warning_count = len(scoped_df[scoped_df["판정"] == "주의"])
+    normal_count = len(scoped_df[scoped_df["판정"] == "정상"])
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("위험", len(scoped_df[scoped_df["판정"] == "위험"]))
+        metric_card("전체 데이터", total_count, icon="📁", color=COLOR_MAP["전체"], subtitle="현재 범위 기준")
     with c2:
-        st.metric("주의", len(scoped_df[scoped_df["판정"] == "주의"]))
+        metric_card("위험", danger_count, icon="🔴", color=COLOR_MAP["위험"], subtitle="즉시 확인 권장")
     with c3:
-        st.metric("정상", len(scoped_df[scoped_df["판정"] == "정상"]))
+        metric_card("주의", warning_count, icon="🟡", color=COLOR_MAP["주의"], subtitle="관찰 필요")
+    with c4:
+        metric_card("정상", normal_count, icon="🟢", color=COLOR_MAP["정상"], subtitle="안정 상태")
 
-    st.subheader("판정별 건수")
-    chart_df = scoped_df["판정"].value_counts()
-    st.bar_chart(chart_df)
+    st.markdown("")
 
-    if "단지명" in scoped_df.columns:
-        st.subheader("단지별 현황")
-        complex_chart_df = scoped_df.groupby(["단지명", "판정"]).size().unstack(fill_value=0)
-        st.bar_chart(complex_chart_df)
+    ch1, ch2 = st.columns(2)
+
+    with ch1:
+        section_title("판정별 건수")
+        status_chart = make_status_chart(scoped_df)
+        if status_chart is not None:
+            st.altair_chart(status_chart, use_container_width=True)
+
+    with ch2:
+        if "단지명" in scoped_df.columns:
+            section_title("단지별 현황")
+            complex_chart = make_complex_chart(scoped_df)
+            if complex_chart is not None:
+                st.altair_chart(complex_chart, use_container_width=True)
+
+    section_title("상세 데이터")
+    st.dataframe(style_dataframe(filtered_df), use_container_width=True, height=500)
 
     download_name_base = Path(file_name).stem
     pdf_complex_name = st.session_state.user_complex if st.session_state.user_complex != "전체" else "전체"
@@ -498,6 +697,9 @@ def render_result_section(df, key_prefix="result", file_name="분석결과.csv")
                 key=f"download_pdf_{key_prefix}"
             )
 
+# -----------------------------
+# 관리자 대시보드
+# -----------------------------
 def admin_dashboard(df):
     st.title("관리자 대시보드")
 
@@ -535,23 +737,23 @@ def admin_dashboard(df):
             if value not in ["", "-", "nan", "None"]:
                 location_parts.append(value)
 
+        location_html = ""
         if location_parts:
             location_html = f"<br>📍 위치: {' / '.join(location_parts)}"
-        else:
-            location_html = ""
 
         st.markdown(
             f"""
             <div style="
-                background:#ffebee;
-                border:2px solid #ff2b2b;
-                border-radius:18px;
-                padding:20px;
-                margin-bottom:20px;
-                text-align:center;
-                font-size:22px;
-                font-weight:800;
-                color:#b00020;
+                background: linear-gradient(135deg, #FDECEC 0%, #FFF3F2 100%);
+                border: 2px solid #E74C3C;
+                border-radius: 18px;
+                padding: 20px;
+                margin-bottom: 20px;
+                text-align: center;
+                font-size: 22px;
+                font-weight: 800;
+                color: #B42318;
+                box-shadow: 0 8px 20px rgba(231,76,60,0.10);
             ">
                 🚨 위험 데이터 {danger_count}건 발생
                 {location_html}
@@ -561,102 +763,16 @@ def admin_dashboard(df):
         )
 
     c1, c2, c3, c4, c5 = st.columns(5)
-
     with c1:
-        st.markdown(
-            f"""
-            <div style="
-                background:#f8f9fa;
-                border:1px solid #d9dee7;
-                border-radius:16px;
-                padding:22px;
-                text-align:center;
-                min-height:120px;
-            ">
-                <div style="font-size:18px;font-weight:700;">👥 전체 사용자</div>
-                <div style="font-size:34px;font-weight:800;margin-top:10px;">{total_users}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        metric_card("전체 사용자", total_users, icon="👥", color="#4F46E5", subtitle="등록 계정 수")
     with c2:
-        st.markdown(
-            f"""
-            <div style="
-                background:#f8f9fa;
-                border:1px solid #d9dee7;
-                border-radius:16px;
-                padding:22px;
-                text-align:center;
-                min-height:120px;
-            ">
-                <div style="font-size:18px;font-weight:700;">📁 전체 데이터</div>
-                <div style="font-size:34px;font-weight:800;margin-top:10px;">{total_rows}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        metric_card("전체 데이터", total_rows, icon="📁", color=COLOR_MAP["전체"], subtitle="현재 파일 기준")
     with c3:
-        danger_bg = "#ffe5e5" if danger_count > 0 else "#fff5f5"
-        danger_border = "#d62828" if danger_count > 0 else "#ffcccc"
-        st.markdown(
-            f"""
-            <div style="
-                background:{danger_bg};
-                border:2px solid {danger_border};
-                border-radius:16px;
-                padding:22px;
-                text-align:center;
-                min-height:120px;
-            ">
-                <div style="font-size:18px;font-weight:800;color:#d62828;">🔴 위험</div>
-                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#d62828;">{danger_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        metric_card("위험", danger_count, icon="🔴", color=COLOR_MAP["위험"], subtitle="즉시 확인")
     with c4:
-        warning_bg = "#fff8dc" if warning_count > 0 else "#fffdf0"
-        warning_border = "#d4a000" if warning_count > 0 else "#f4d35e"
-        st.markdown(
-            f"""
-            <div style="
-                background:{warning_bg};
-                border:2px solid {warning_border};
-                border-radius:16px;
-                padding:22px;
-                text-align:center;
-                min-height:120px;
-            ">
-                <div style="font-size:18px;font-weight:800;color:#c99700;">🟡 주의</div>
-                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#c99700;">{warning_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+        metric_card("주의", warning_count, icon="🟡", color=COLOR_MAP["주의"], subtitle="관찰 필요")
     with c5:
-        normal_bg = "#ecfff0" if normal_count > 0 else "#f3fff3"
-        normal_border = "#52b788" if normal_count > 0 else "#b7efc5"
-        st.markdown(
-            f"""
-            <div style="
-                background:{normal_bg};
-                border:2px solid {normal_border};
-                border-radius:16px;
-                padding:22px;
-                text-align:center;
-                min-height:120px;
-            ">
-                <div style="font-size:18px;font-weight:800;color:#2b9348;">🟢 정상</div>
-                <div style="font-size:42px;font-weight:900;margin-top:10px;color:#2b9348;">{normal_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        metric_card("정상", normal_count, icon="🟢", color=COLOR_MAP["정상"], subtitle="안정 상태")
 
     st.write("")
 
@@ -683,7 +799,7 @@ def admin_dashboard(df):
             st.rerun()
 
     st.markdown("---")
-    st.info(f"현재 필터: {st.session_state.dashboard_filter}")
+    info_box(f"현재 필터: <b>{st.session_state.dashboard_filter}</b>")
 
     current_filter = st.session_state.dashboard_filter
 
@@ -696,13 +812,29 @@ def admin_dashboard(df):
     else:
         filtered_df = df
 
+    chart_left, chart_right = st.columns(2)
+
+    with chart_left:
+        section_title("대시보드 판정별 건수")
+        status_chart = make_status_chart(df)
+        if status_chart is not None:
+            st.altair_chart(status_chart, use_container_width=True)
+
+    with chart_right:
+        if "단지명" in df.columns:
+            section_title("대시보드 단지별 현황")
+            complex_chart = make_complex_chart(df)
+            if complex_chart is not None:
+                st.altair_chart(complex_chart, use_container_width=True)
+
+    st.markdown("---")
     st.subheader("필터 결과")
     filtered_df = apply_complex_filter(filtered_df, key_prefix="dashboard")
 
     if filtered_df.empty:
         st.warning("조건에 맞는 데이터가 없습니다.")
     else:
-        st.dataframe(filtered_df, use_container_width=True, height=450)
+        st.dataframe(style_dataframe(filtered_df), use_container_width=True, height=450)
 
         pdf_data = generate_pdf_bytes(filtered_df, "관리자대시보드")
         if pdf_data:
@@ -722,10 +854,13 @@ def admin_dashboard(df):
     if log_df is not None and not log_df.empty:
         log_df = apply_user_complex_scope(log_df)
         log_df = apply_complex_filter(log_df, key_prefix="dashboard_log")
-        st.dataframe(log_df, use_container_width=True, height=300)
+        st.dataframe(style_dataframe(log_df), use_container_width=True, height=300)
     else:
         st.info("저장된 위험 이력이 없습니다.")
 
+# -----------------------------
+# 관리자 전체 사용자 통합 조회
+# -----------------------------
 def admin_all_users_section():
     if st.session_state.role != "admin":
         return
@@ -789,17 +924,15 @@ def main():
         return
 
     show_logo()
+    show_top_banner()
 
     col1, col2 = st.columns([6, 1])
     with col1:
-        st.title("화재 위험도 자동 분석 프로그램 - (주)윤우테크")
         st.caption(
             f"로그인: {st.session_state.username} | 권한: {get_role_name(st.session_state.role)}"
         )
 
     with col2:
-        st.write("")
-        st.write("")
         if st.button("로그아웃", use_container_width=True):
             logout()
 
@@ -815,7 +948,7 @@ def main():
         st.subheader("CSV 업로드 분석")
 
         if st.session_state.role == "client" and st.session_state.user_complex != "전체":
-            st.info(f"현재 계정은 **{st.session_state.user_complex}** 단지 전용 계정입니다.")
+            info_box(f"현재 계정은 <b>{st.session_state.user_complex}</b> 단지 전용 계정입니다.")
 
         uploaded_files = st.file_uploader(
             "CSV 파일 여러 개 업로드",
@@ -942,6 +1075,5 @@ def main():
 # -----------------------------
 if __name__ == "__main__":
     main()
-
 
 
