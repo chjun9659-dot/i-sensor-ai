@@ -7,7 +7,7 @@ import os
 
 st.set_page_config(page_title="연차 관리 시스템", layout="wide")
 
-st.title("📊 연차 사용 관리 프로그램")
+st.title("📊 윤우테크 연차관리 프로그램")
 
 FILE_PATH = "회사 연차사용.xlsx"
 SHEET_NAME = "26년도 연차사용"
