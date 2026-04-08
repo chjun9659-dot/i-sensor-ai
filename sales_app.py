@@ -542,7 +542,7 @@ def save_meeting_alert_df(df: pd.DataFrame):
 # 로그인
 # =========================================================
 def login():
-    st.title("🔐 윤우 영업 통합 시스템 로그인")
+    st.title("🔐 윤우 계약 통합 시스템 로그인")
     user_id = st.text_input("아이디")
     password = st.text_input("비밀번호", type="password")
 
