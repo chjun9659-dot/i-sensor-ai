@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 
-st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
+st.set_page_config(page_title="윤우 계약 통합 시스템", layout="wide")
 
 # =========================================================
 # 기본 설정
@@ -678,13 +678,18 @@ def convert_number_display(value, col_name=""):
         if col_name in numeric_cols:
             s2 = s.replace("₩", "").replace("￦", "").replace(",", "").replace(" ", "")
             num = pd.to_numeric(s2, errors="coerce")
-            if pd.notna(num):
-                if col_name == "수량":
-                    return int(num) if float(num).is_integer() else round(float(num), 2)
-                return f"{int(num):,}" if float(num).is_integer() else f"{float(num):,.2f}"
 
-        return value
+            if pd.notna(num):
+                # 정수면 문자열 정수로 반환
+                if float(num).is_integer():
+                    return f"{int(num):,}"
+
+                # 소수점이 실제 있을 때만 표시
+                return f"{float(num):,.2f}".rstrip("0").rstrip(".")
+
+        return s
     except Exception:
+        return str(value) if value is not None else ""
         return value
 
 
