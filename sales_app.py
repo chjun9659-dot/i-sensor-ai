@@ -46,7 +46,6 @@ BUSINESS_CONFIG = {
     },
     "전기차 충전기": {
         "sheets": {
-            # 여기에 충전기 '계약서 접수현황' 시트 URL만 넣으시면 됩니다.
             "계약접수현황": "https://docs.google.com/spreadsheets/d/1Efuld8DUSHs8jR42R5XKIT3y-3P_pf--aP9ED_SYWhc/edit?gid=784400128#gid=784400128",
         },
         "menus": [
@@ -119,7 +118,10 @@ def remove_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.columns:
         if str(col).strip() in ["", "빈컬럼"]:
             continue
-        if not df[col].isna().all():
+        col_data = df[col]
+        if isinstance(col_data, pd.DataFrame):
+            col_data = col_data.iloc[:, 0]
+        if not col_data.isna().all():
             keep_cols.append(col)
     return df[keep_cols].copy()
 
@@ -147,14 +149,17 @@ def format_date_value(x):
 
 def preprocess_df(df: pd.DataFrame) -> pd.DataFrame:
     df = clean_columns(df)
-    df = remove_empty_columns(df)
     df = df.fillna("")
 
     for col in df.columns:
-        if any(key in str(col) for key in ["날짜", "일자", "마감", "공고", "접수", "실사"]):
-            df[col] = df[col].apply(format_date_value)
+        col_data = df[col]
+        if isinstance(col_data, pd.DataFrame):
+            col_data = col_data.iloc[:, 0]
+
+        if any(key in str(col) for key in ["날짜", "일자", "마감", "공고", "접수", "실사", "발행", "입금", "계약"]):
+            df[col] = col_data.apply(format_date_value)
         else:
-            df[col] = df[col].apply(lambda x: x if isinstance(x, (int, float)) else normalize_text(x))
+            df[col] = col_data.apply(lambda x: x if isinstance(x, (int, float)) else normalize_text(x))
     return df
 
 
@@ -202,19 +207,178 @@ def convert_google_sheet_url_to_csv(url: str) -> str:
     return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&gid={gid}"
 
 
+def detect_header_row(raw: pd.DataFrame) -> int:
+    header_keywords = [
+        "관리코드", "관리번호", "아파트명", "아파트 명", "단지명", "현장명",
+        "연락처", "지역", "주소", "상품", "판매형태", "운영계약", "결제방식",
+        "영업담당", "담당자", "실사담당", "수량", "판매가격", "계약날짜",
+        "행위신고", "시공요청서", "시공", "시공여부", "세금계산서 발행",
+        "세금계산서발행", "입금일", "영업수수료", "운영사", "구분",
+        "계약서 유무", "서류 풀 세팅 완료 표시", "추가요금", "설치업체", "설치유무"
+    ]
+
+    if raw.empty:
+        return 0
+
+    scan_rows = min(len(raw), 10)
+    best_score = -1
+    best_idx = 0
+
+    for i in range(scan_rows):
+        row_values = raw.iloc[i].astype(str).str.strip().tolist()
+        score = sum(1 for v in row_values if v in header_keywords)
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    return best_idx
+
+
+def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
+    df = df.copy()
+
+    def is_currency_only_name(name: str) -> bool:
+        return str(name).strip() in ["₩", "￦"]
+
+    def is_effective_blank(series: pd.Series) -> bool:
+        s = series.astype(str).str.strip()
+        return (s == "").all()
+
+    def rename_contract_columns_by_position(df_inner: pd.DataFrame) -> pd.DataFrame:
+        cols = list(df_inner.columns)
+
+        if "영업담당" not in cols:
+            return df_inner
+
+        manager_idx = cols.index("영업담당")
+        right_cols = cols[manager_idx + 1:]
+
+        usable_cols = []
+
+        for c in right_cols:
+            col_series = df_inner[c]
+            if isinstance(col_series, pd.DataFrame):
+                col_series = col_series.iloc[:, 0]
+
+            col_name = str(c).strip()
+
+            # 통화 전용 컬럼 헤더 제거
+            if is_currency_only_name(col_name):
+                continue
+
+            # 완전 빈 컬럼 제거
+            if is_effective_blank(col_series):
+                continue
+
+            usable_cols.append(c)
+
+        expected = [
+            "수량",
+            "판매가격",
+            "계약날짜",
+            "행위신고",
+            "시공요청서",
+            "시공",
+            "시공여부",
+            "세금계산서 발행",
+            "입금일",
+            "영업수수료",
+        ]
+
+        rename_map = {}
+        for old, new in zip(usable_cols, expected):
+            rename_map[old] = new
+
+        if rename_map:
+            df_inner = df_inner.rename(columns=rename_map)
+            df_inner.columns = make_unique_columns(df_inner.columns)
+
+        # 남아있는 통화헤더 컬럼 제거
+        drop_cols = [c for c in df_inner.columns if is_currency_only_name(c)]
+        if drop_cols:
+            df_inner = df_inner.drop(columns=drop_cols, errors="ignore")
+
+        return df_inner
+
+    # 아이센서 계약단지 전용 강제 보정
+    if st.session_state.business == "아이센서" and sheet_name == "계약단지":
+        df = rename_contract_columns_by_position(df)
+
+        if "수량" in df.columns:
+            qty = pd.to_numeric(
+                df["수량"].astype(str).str.replace(",", "", regex=False).str.strip(),
+                errors="coerce"
+            )
+            if qty.notna().sum() > 0:
+                df["수량"] = qty.apply(
+                    lambda x: int(x) if pd.notna(x) and float(x).is_integer() else x
+                )
+
+        if "판매가격" in df.columns:
+            price = pd.to_numeric(
+                df["판매가격"].astype(str)
+                .str.replace(",", "", regex=False)
+                .str.replace("₩", "", regex=False)
+                .str.replace("￦", "", regex=False)
+                .str.strip(),
+                errors="coerce"
+            )
+            if price.notna().sum() > 0:
+                df["판매가격"] = price.apply(
+                    lambda x: int(x) if pd.notna(x) and float(x).is_integer() else x
+                )
+
+        if "영업수수료" in df.columns:
+            fee = pd.to_numeric(
+                df["영업수수료"].astype(str)
+                .str.replace(",", "", regex=False)
+                .str.replace("₩", "", regex=False)
+                .str.replace("￦", "", regex=False)
+                .str.strip(),
+                errors="coerce"
+            )
+            if fee.notna().sum() > 0:
+                df["영업수수료"] = fee.apply(
+                    lambda x: int(x) if pd.notna(x) and float(x).is_integer() else x
+                )
+
+        return df
+
+    # 기타 시트 공통 처리
+    if "수량" in df.columns:
+        qty = pd.to_numeric(
+            df["수량"].astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce"
+        )
+        if qty.notna().sum() > 0:
+            df["수량"] = qty.apply(
+                lambda x: int(x) if pd.notna(x) and float(x).is_integer() else x
+            )
+
+    return df
+
+
 @st.cache_data(ttl=60)
 def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.DataFrame:
     if not url or "여기에_" in url:
         return pd.DataFrame()
 
     csv_url = convert_google_sheet_url_to_csv(url)
+    raw = pd.read_csv(csv_url, header=None, dtype=str).fillna("")
 
-    try:
-        df = pd.read_csv(csv_url, header=1)
-    except Exception:
-        df = pd.read_csv(csv_url, header=0)
+    if raw.empty:
+        return pd.DataFrame()
 
-    return preprocess_df(df)
+    header_row_idx = detect_header_row(raw)
+
+    headers = raw.iloc[header_row_idx].astype(str).str.strip().tolist()
+    data = raw.iloc[header_row_idx + 1:].reset_index(drop=True).copy()
+    data.columns = headers
+
+    df = data.copy()
+    df = preprocess_df(df)
+    df = force_fix_quantity_column(df, sheet_name)
+    return df
 
 
 def load_df(sheet_key: str) -> pd.DataFrame:
@@ -244,7 +408,6 @@ COMMON_FILE_MAP = {
 
 
 def save_common_df(key: str, df: pd.DataFrame):
-    COMMON_FILE_MAP[key]
     df.to_csv(COMMON_FILE_MAP[key], index=False, encoding="utf-8-sig")
 
 
@@ -364,7 +527,7 @@ def get_best_column(df, candidates):
 
 
 def get_site_column(df):
-    return get_best_column(df, ["아파트 명", "아파트명", "단지명", "현장명"])
+    return get_best_column(df, ["아파트 명", "아파트명", "단지명", "현장명", "주소"])
 
 
 def get_manager_column(df):
@@ -434,24 +597,36 @@ def style_status_value(val):
     s = str(val).strip()
     if s in ["계약", "완료", "시공완료", "유찰", "낙찰", "진행완료", "접수완료"]:
         return "background-color: #dff0d8; color: #1b5e20; font-weight: bold;"
-    if s in ["진행중", "상담중", "검토중", "운영사 변경중", "필", "상", "접수중"]:
+    if s in ["진행중", "상담중", "검토중", "운영사 변경중", "필", "상", "접수중", "시공전"]:
         return "background-color: #fff4cc; color: #7a5c00; font-weight: bold;"
     if s in ["부결", "실패", "보류", "미진행", "하", "불가", "미접수"]:
         return "background-color: #f8d7da; color: #8a1f2d; font-weight: bold;"
     return ""
 
 
-def convert_number_display(value):
-    if pd.isna(value):
-        return ""
+def convert_number_display(value, col_name=""):
     try:
-        # 문자열 숫자도 처리
-        num = float(value)
-        # 정수처럼 보이면 정수로 표시
-        if num.is_integer():
-            return int(num)
-        # 소수는 너무 길지 않게
-        return round(num, 2)
+        if value is None or pd.isna(value):
+            return ""
+
+        s = str(value).strip()
+        if s == "":
+            return ""
+
+        # 날짜형 값은 그대로 유지
+        if re.match(r"^\d{2,4}[.\-/]\d{1,2}([.\-/]\d{1,2})?$", s):
+            return s
+
+        numeric_cols = ["수량", "판매가격", "영업수수료"]
+        if col_name in numeric_cols:
+            s2 = s.replace("₩", "").replace("￦", "").replace(",", "").replace(" ", "")
+            num = pd.to_numeric(s2, errors="coerce")
+            if pd.notna(num):
+                if col_name == "수량":
+                    return int(num) if float(num).is_integer() else round(float(num), 2)
+                return f"{int(num):,}" if float(num).is_integer() else f"{float(num):,.2f}"
+
+        return value
     except Exception:
         return value
 
@@ -461,23 +636,35 @@ def prepare_display_df(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     df = df.copy()
+    df.columns = make_unique_columns(df.columns)
 
-    # 완전히 비어 있는 컬럼 제거
+    # 통화 전용 컬럼 제거
+    drop_cols = [c for c in df.columns if str(c).strip() in ["₩", "￦"]]
+    if drop_cols:
+        df = df.drop(columns=drop_cols, errors="ignore")
+
+    # 완전히 비어 있는 빈컬럼 제거
     keep_cols = []
     for col in df.columns:
         col_name = str(col).strip()
+        col_data = df[col]
+
+        if isinstance(col_data, pd.DataFrame):
+            col_data = col_data.iloc[:, 0]
+
         if col_name.startswith("빈컬럼"):
-            # 값이 하나라도 있으면 유지, 전부 비었으면 제거
-            if not df[col].astype(str).replace("", pd.NA).isna().all():
+            if not col_data.astype(str).replace("", pd.NA).isna().all():
                 keep_cols.append(col)
         else:
             keep_cols.append(col)
 
     df = df[keep_cols].copy()
 
-    # 숫자 표시 정리
     for col in df.columns:
-        df[col] = df[col].apply(convert_number_display)
+        col_data = df[col]
+        if isinstance(col_data, pd.DataFrame):
+            col_data = col_data.iloc[:, 0]
+        df[col] = col_data.apply(lambda x: convert_number_display(x, col))
 
     return df
 
@@ -487,7 +674,7 @@ def styled_dataframe(df: pd.DataFrame):
 
     target_cols = [
         c for c in df.columns
-        if c in ["진행여부", "결과", "시공여부", "확인", "낙찰여부", "단지 반응도", "가능성", "구분", "상태"]
+        if c in ["진행여부", "결과", "시공여부", "확인", "낙찰여부", "단지 반응도", "가능성", "구분", "상태", "설치유무"]
     ]
 
     if not target_cols:
@@ -1013,7 +1200,7 @@ def page_admin_tools():
             if df.empty:
                 st.info("데이터가 없습니다.")
                 return
-            site_col = get_best_column(df, ["아파트명", "아파트 명", "단지명"])
+            site_col = get_best_column(df, ["아파트명", "아파트 명", "단지명", "주소"])
             manager_col = get_manager_column(df)
             if not site_col or not manager_col:
                 st.warning("필수 컬럼을 찾지 못했습니다.")
