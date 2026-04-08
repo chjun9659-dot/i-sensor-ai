@@ -244,7 +244,7 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
         s = series.astype(str).str.strip()
         return (s == "").all()
 
-    def rename_contract_columns_by_position(df_inner: pd.DataFrame) -> pd.DataFrame:
+    def rename_sensor_contract_columns(df_inner: pd.DataFrame) -> pd.DataFrame:
         cols = list(df_inner.columns)
 
         if "영업담당" not in cols:
@@ -254,7 +254,6 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
         right_cols = cols[manager_idx + 1:]
 
         usable_cols = []
-
         for c in right_cols:
             col_series = df_inner[c]
             if isinstance(col_series, pd.DataFrame):
@@ -262,11 +261,9 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
 
             col_name = str(c).strip()
 
-            # 통화 전용 컬럼 헤더 제거
             if is_currency_only_name(col_name):
                 continue
 
-            # 완전 빈 컬럼 제거
             if is_effective_blank(col_series):
                 continue
 
@@ -293,16 +290,71 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
             df_inner = df_inner.rename(columns=rename_map)
             df_inner.columns = make_unique_columns(df_inner.columns)
 
-        # 남아있는 통화헤더 컬럼 제거
         drop_cols = [c for c in df_inner.columns if is_currency_only_name(c)]
         if drop_cols:
             df_inner = df_inner.drop(columns=drop_cols, errors="ignore")
 
         return df_inner
 
-    # 아이센서 계약단지 전용 강제 보정
+    def rename_ev_contract_columns(df_inner: pd.DataFrame) -> pd.DataFrame:
+        cols = list(df_inner.columns)
+
+        if "주소" not in cols:
+            return df_inner
+
+        addr_idx = cols.index("주소")
+        rename_map = {}
+
+        # 주소 다음 컬럼들 강제 보정
+        if addr_idx + 1 < len(cols):
+            rename_map[cols[addr_idx + 1]] = "설치대수"
+        if addr_idx + 2 < len(cols):
+            rename_map[cols[addr_idx + 2]] = "주차면"
+        if addr_idx + 3 < len(cols):
+            rename_map[cols[addr_idx + 3]] = "계약서 유무"
+        if addr_idx + 4 < len(cols):
+            rename_map[cols[addr_idx + 4]] = "서류 풀 세팅 완료 표시"
+        if addr_idx + 5 < len(cols):
+            rename_map[cols[addr_idx + 5]] = "추가요금"
+        if addr_idx + 6 < len(cols):
+            rename_map[cols[addr_idx + 6]] = "설치업체"
+        if addr_idx + 7 < len(cols):
+            rename_map[cols[addr_idx + 7]] = "설치유무"
+        if addr_idx + 8 < len(cols):
+            rename_map[cols[addr_idx + 8]] = "계약날짜"
+        if addr_idx + 9 < len(cols):
+            rename_map[cols[addr_idx + 9]] = "원본 등기 발송"
+        if addr_idx + 10 < len(cols):
+            rename_map[cols[addr_idx + 10]] = "계약기간"
+        if addr_idx + 11 < len(cols):
+            rename_map[cols[addr_idx + 11]] = "운영사 접수"
+        if addr_idx + 12 < len(cols):
+            rename_map[cols[addr_idx + 12]] = "기타"
+        if addr_idx + 13 < len(cols):
+            rename_map[cols[addr_idx + 13]] = "전력인입"
+        if addr_idx + 14 < len(cols):
+            rename_map[cols[addr_idx + 14]] = "특이사항"
+
+        df_inner = df_inner.rename(columns=rename_map)
+        df_inner.columns = make_unique_columns(df_inner.columns)
+
+        # 숫자 컬럼 정리
+        for num_col in ["설치대수", "주차면"]:
+            if num_col in df_inner.columns:
+                num = pd.to_numeric(
+                    df_inner[num_col].astype(str).str.replace(",", "", regex=False).str.strip(),
+                    errors="coerce"
+                )
+                if num.notna().sum() > 0:
+                    df_inner[num_col] = num.apply(
+                        lambda x: int(x) if pd.notna(x) and float(x).is_integer() else x
+                    )
+
+        return df_inner
+
+    # 아이센서 계약단지 전용
     if st.session_state.business == "아이센서" and sheet_name == "계약단지":
-        df = rename_contract_columns_by_position(df)
+        df = rename_sensor_contract_columns(df)
 
         if "수량" in df.columns:
             qty = pd.to_numeric(
@@ -344,7 +396,12 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
 
         return df
 
-    # 기타 시트 공통 처리
+    # 전기차 계약접수현황 전용
+    if st.session_state.business == "전기차 충전기" and sheet_name == "계약접수현황":
+        df = rename_ev_contract_columns(df)
+        return df
+
+    # 기타 공통 처리
     if "수량" in df.columns:
         qty = pd.to_numeric(
             df["수량"].astype(str).str.replace(",", "", regex=False).str.strip(),
@@ -617,7 +674,7 @@ def convert_number_display(value, col_name=""):
         if re.match(r"^\d{2,4}[.\-/]\d{1,2}([.\-/]\d{1,2})?$", s):
             return s
 
-        numeric_cols = ["수량", "판매가격", "영업수수료"]
+        numeric_cols = ["수량", "판매가격", "영업수수료", "설치대수", "주차면"]
         if col_name in numeric_cols:
             s2 = s.replace("₩", "").replace("￦", "").replace(",", "").replace(" ", "")
             num = pd.to_numeric(s2, errors="coerce")
