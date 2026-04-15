@@ -39,6 +39,7 @@ BUSINESS_CONFIG = {
             "가능단지",
             "입찰공고단지",
             "계약단지",
+            "라우터 관리",
             "오늘 할 일",
             "일정 관리",
             "영업 알림",
@@ -293,7 +294,33 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
         drop_cols = [c for c in df_inner.columns if is_currency_only_name(c)]
         if drop_cols:
             df_inner = df_inner.drop(columns=drop_cols, errors="ignore")
+            
+        # -----------------------------------------
+        # 라우터 컬럼명 보정
+        # -----------------------------------------
+        cols_after = list(df_inner.columns)
 
+        if "라우터청구대상" in cols_after:
+            billing_idx = cols_after.index("라우터청구대상")
+
+            if billing_idx + 1 < len(cols_after):
+                next_col = cols_after[billing_idx + 1]
+                if str(next_col).startswith("빈컬럼"):
+                    df_inner = df_inner.rename(columns={next_col: "라우터월비용"})
+
+            cols_after = list(df_inner.columns)
+            if billing_idx + 2 < len(cols_after):
+                next_col = cols_after[billing_idx + 2]
+                if str(next_col).startswith("빈컬럼"):
+                    df_inner = df_inner.rename(columns={next_col: "라우터청구시작월"})
+
+            cols_after = list(df_inner.columns)
+            if billing_idx + 3 < len(cols_after):
+                next_col = cols_after[billing_idx + 3]
+                if str(next_col).startswith("빈컬럼"):
+                    df_inner = df_inner.rename(columns={next_col: "라우터청구종료월"})
+
+        df_inner.columns = make_unique_columns(df_inner.columns)
         return df_inner
 
     def rename_ev_contract_columns(df_inner: pd.DataFrame) -> pd.DataFrame:
@@ -488,7 +515,7 @@ def init_files():
     ensure_common_file("일정", ["등록일시", "작성자", "사업", "일정명", "날짜"])
     ensure_common_file("세금알림", ["등록일시", "작성자", "사업", "단지명", "예정일", "상태", "비고"])
     ensure_common_file("입대의알림", ["등록일시", "작성자", "사업", "단지명", "입대의일자", "상태", "비고"])
-
+    ensure_money_files()
 
 def load_tasks_df():
     df = load_common_df("할일")
@@ -537,6 +564,270 @@ def load_meeting_alert_df():
 def save_meeting_alert_df(df: pd.DataFrame):
     save_common_df("입대의알림", df[["등록일시", "작성자", "사업", "단지명", "입대의일자", "상태", "비고"]].copy())
 
+# =========================================================
+# 수금관리 / 미입금관리 / 담당자별현황
+# =========================================================
+MONEY_FILE_MAP = {
+    "수금관리": os.path.join(DATA_DIR, "sensor_billing_master.csv"),
+    "미입금관리": os.path.join(DATA_DIR, "sensor_unpaid.csv"),
+    "담당자별현황": os.path.join(DATA_DIR, "sensor_manager_summary.csv"),
+}
+
+
+def save_money_df(key: str, df: pd.DataFrame):
+    path = MONEY_FILE_MAP[key]
+    df.to_csv(path, index=False, encoding="utf-8-sig")
+
+
+def load_money_df(key: str) -> pd.DataFrame:
+    path = MONEY_FILE_MAP[key]
+    if os.path.exists(path):
+        try:
+            return pd.read_csv(path, encoding="utf-8-sig").fillna("")
+        except Exception:
+            return pd.read_csv(path).fillna("")
+    return pd.DataFrame()
+
+
+def ensure_money_files():
+    if not os.path.exists(MONEY_FILE_MAP["수금관리"]):
+        save_money_df(
+            "수금관리",
+            pd.DataFrame(columns=[
+                "기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"
+            ])
+        )
+
+    if not os.path.exists(MONEY_FILE_MAP["미입금관리"]):
+        save_money_df(
+            "미입금관리",
+            pd.DataFrame(columns=[
+                "기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"
+            ])
+        )
+
+    if not os.path.exists(MONEY_FILE_MAP["담당자별현황"]):
+        save_money_df(
+            "담당자별현황",
+            pd.DataFrame(columns=[
+                "담당자", "미수금합계"
+            ])
+        )
+
+
+def normalize_payment_status(value):
+    s = str(value).strip()
+    if s in ["입금", "입금완료", "완료", "수금완료", "Y", "y", "yes", "Yes"]:
+        return "입금"
+    return ""
+
+
+def build_billing_rows_from_router_claim_df(claim_df: pd.DataFrame) -> pd.DataFrame:
+    if claim_df is None or claim_df.empty:
+        return pd.DataFrame(columns=[
+            "기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"
+        ])
+
+    df = claim_df.copy()
+
+    if "청구년월" not in df.columns:
+        df["청구년월"] = ""
+
+    if "단지명" not in df.columns:
+        df["단지명"] = ""
+
+    if "담당자" not in df.columns:
+        df["담당자"] = ""
+
+    if "라우터월비용" not in df.columns:
+        df["라우터월비용"] = 0
+
+    df["청구금액"] = pd.to_numeric(df["라우터월비용"], errors="coerce").fillna(0).astype(int)
+    df["입금여부"] = ""
+    df["미수금"] = df["청구금액"]
+
+    out = df[["청구년월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+    out = out.rename(columns={"청구년월": "기준월"})
+
+    return out
+
+
+def add_monthly_billing_data(claim_df: pd.DataFrame):
+    ensure_money_files()
+
+    new_rows = build_billing_rows_from_router_claim_df(claim_df)
+    billing_df = load_money_df("수금관리")
+
+    if billing_df.empty:
+        billing_df = pd.DataFrame(columns=[
+            "기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"
+        ])
+
+    # 컬럼 보정
+    for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
+        if col not in billing_df.columns:
+            billing_df[col] = ""
+
+    # 중복 컬럼 제거
+    billing_df = billing_df.loc[:, ~billing_df.columns.duplicated()].copy()
+
+    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+
+    if new_rows.empty:
+        return {
+            "added_count": 0,
+            "duplicate_count": 0,
+            "total_count": len(billing_df)
+        }
+
+    billing_df["기준월"] = billing_df["기준월"].astype(str).str.strip()
+    billing_df["단지명"] = billing_df["단지명"].astype(str).str.strip()
+    billing_df["담당자"] = billing_df["담당자"].astype(str).str.strip()
+    billing_df["입금여부"] = billing_df["입금여부"].apply(normalize_payment_status)
+    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0).astype(int)
+
+    # 기존 데이터의 미수금 재계산
+    st.write("수금관리 컬럼 확인:", list(billing_df.columns))
+    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0)
+
+    billing_df["미수금"] = billing_df["청구금액"]
+    billing_df.loc[billing_df["입금여부"] == "입금", "미수금"] = 0
+    billing_df["미수금"] = billing_df["미수금"].astype(int)
+
+    billing_df["_dup_key"] = (
+        billing_df["기준월"].astype(str).str.strip() + "||" +
+        billing_df["단지명"].astype(str).str.strip()
+    )
+
+    new_rows["기준월"] = new_rows["기준월"].astype(str).str.strip()
+    new_rows["단지명"] = new_rows["단지명"].astype(str).str.strip()
+    new_rows["담당자"] = new_rows["담당자"].astype(str).str.strip()
+    new_rows["입금여부"] = new_rows["입금여부"].apply(normalize_payment_status)
+    new_rows["청구금액"] = pd.to_numeric(new_rows["청구금액"], errors="coerce").fillna(0).astype(int)
+    new_rows["미수금"] = new_rows["청구금액"]
+
+    new_rows["_dup_key"] = (
+        new_rows["기준월"].astype(str).str.strip() + "||" +
+        new_rows["단지명"].astype(str).str.strip()
+    )
+
+    existing_keys = set(billing_df["_dup_key"].tolist())
+    add_df = new_rows[~new_rows["_dup_key"].isin(existing_keys)].copy()
+    duplicate_count = len(new_rows) - len(add_df)
+
+    if not add_df.empty:
+        billing_df = pd.concat([billing_df, add_df], ignore_index=True)
+
+    billing_df = billing_df.drop(columns=["_dup_key"], errors="ignore")
+    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+    save_money_df("수금관리", billing_df)
+
+    rebuild_billing_views()
+
+    return {
+        "added_count": len(add_df),
+        "duplicate_count": duplicate_count,
+        "total_count": len(billing_df)
+    }
+
+
+def rebuild_billing_views():
+    ensure_money_files()
+
+    billing_df = load_money_df("수금관리")
+    if billing_df.empty:
+        unpaid_df = pd.DataFrame(columns=["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"])
+        manager_df = pd.DataFrame(columns=["담당자", "미수금합계"])
+        save_money_df("미입금관리", unpaid_df)
+        save_money_df("담당자별현황", manager_df)
+        return
+
+    for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
+        if col not in billing_df.columns:
+            billing_df[col] = ""
+
+    # 중복 컬럼 제거
+    billing_df = billing_df.loc[:, ~billing_df.columns.duplicated()].copy()
+
+    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+
+    billing_df["기준월"] = billing_df["기준월"].astype(str).str.strip()
+    billing_df["단지명"] = billing_df["단지명"].astype(str).str.strip()
+    billing_df["담당자"] = billing_df["담당자"].astype(str).str.strip()
+    billing_df["입금여부"] = billing_df["입금여부"].apply(normalize_payment_status)
+    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0).astype(int)
+
+    billing_df["미수금"] = billing_df.apply(
+        lambda r: 0 if normalize_payment_status(r["입금여부"]) == "입금"
+        else int(r["청구금액"] or 0),
+        axis=1
+    )
+
+    save_money_df("수금관리", billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy())
+
+    unpaid_df = billing_df[billing_df["미수금"] > 0].copy()
+    unpaid_df = unpaid_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+    save_money_df("미입금관리", unpaid_df)
+
+    if unpaid_df.empty:
+        manager_df = pd.DataFrame(columns=["담당자", "미수금합계"])
+    else:
+        manager_df = (
+            unpaid_df.groupby("담당자", dropna=False)["미수금"]
+            .sum()
+            .reset_index()
+            .rename(columns={"미수금": "미수금합계"})
+            .sort_values("미수금합계", ascending=False)
+        )
+
+    save_money_df("담당자별현황", manager_df)
+
+
+def load_billing_dashboard_data():
+    ensure_money_files()
+    rebuild_billing_views()
+
+    billing_df = load_money_df("수금관리")
+    unpaid_df = load_money_df("미입금관리")
+    manager_df = load_money_df("담당자별현황")
+
+    return billing_df, unpaid_df, manager_df
+
+def mark_billing_paid(target_month: str, target_site: str):
+    ensure_money_files()
+
+    billing_df = load_money_df("수금관리")
+    if billing_df.empty:
+        return False
+
+    for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
+        if col not in billing_df.columns:
+            billing_df[col] = ""
+
+    billing_df = billing_df.loc[:, ~billing_df.columns.duplicated()].copy()
+    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+
+    billing_df["기준월"] = billing_df["기준월"].astype(str).str.strip()
+    billing_df["단지명"] = billing_df["단지명"].astype(str).str.strip()
+    billing_df["담당자"] = billing_df["담당자"].astype(str).str.strip()
+    billing_df["입금여부"] = billing_df["입금여부"].apply(normalize_payment_status)
+    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0).astype(int)
+
+    mask = (
+        (billing_df["기준월"] == str(target_month).strip()) &
+        (billing_df["단지명"] == str(target_site).strip())
+    )
+
+    if mask.sum() == 0:
+        return False
+
+    billing_df.loc[mask, "입금여부"] = "입금"
+    billing_df.loc[mask, "미수금"] = 0
+    billing_df.loc[mask, "입금일"] = datetime.now().strftime("%Y-%m-%d")
+
+    save_money_df("수금관리", billing_df)
+    rebuild_billing_views()
+    return True
 
 # =========================================================
 # 로그인
@@ -918,6 +1209,38 @@ def page_dashboard():
 
         st.divider()
 
+        # 라우터 KPI 추가
+        router_base_df = build_router_base_df()
+        if not router_base_df.empty:
+            current_year = datetime.today().year
+            current_month = datetime.today().month
+            current_ym = f"{current_year:04d}-{current_month:02d}"
+
+            router_df = router_base_df[router_base_df["라우터사용"] == "예"].copy()
+            waiting_df = router_df[router_df["라우터명의이전상태"] == "이전대기"].copy()
+            reject_df = router_df[router_df["라우터명의이전상태"] == "이전거부"].copy()
+            charge_df = get_router_charge_target_df(router_base_df, current_year, current_month)
+
+            r1, r2, r3, r4 = st.columns(4)
+            r1.metric("라우터 사용 단지", len(router_df))
+            r2.metric("이전대기", len(waiting_df))
+            r3.metric("이전거부", len(reject_df))
+            r4.metric(f"{current_ym} 청구대상", len(charge_df))
+
+            if not charge_df.empty:
+                st.subheader(f"📡 {current_ym} 라우터 청구대상 미리보기")
+                preview_df = charge_df[[
+                    "단지명_표시", "담당자_표시", "라우터명의이전상태",
+                    "라우터청구대상", "라우터월비용", "라우터비고"
+                ]].copy()
+                preview_df = preview_df.rename(columns={
+                    "단지명_표시": "단지명",
+                    "담당자_표시": "담당자",
+                })
+                st.dataframe(preview_df.head(20), use_container_width=True, hide_index=True)
+
+        st.divider()
+
         if is_admin() and not sales_df.empty:
             manager_col = get_manager_column(sales_df)
             if manager_col:
@@ -1275,6 +1598,580 @@ def page_admin_tools():
         if not df.empty:
             st.dataframe(df.head(50), use_container_width=True, height=500)
 
+# =========================================================
+# 라우터 관리
+# =========================================================
+ROUTER_COLUMNS = [
+    "라우터사용",
+    "라우터개통일",
+    "라우터명의이전상태",
+    "라우터명의이전일",
+    "라우터청구대상",
+    "라우터월비용",
+    "라우터청구시작월",
+    "라우터청구종료월",
+    "라우터비고",
+]
+
+ROUTER_STATUS_OPTIONS = ["", "이전대기", "이전완료", "이전거부", "해지"]
+ROUTER_BILLING_OPTIONS = ["", "청구", "미청구"]
+ROUTER_USE_OPTIONS = ["", "예", "아니오"]
+
+
+def clean_router_text(value):
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def normalize_year_month(value):
+    s = clean_router_text(value)
+    if s == "":
+        return ""
+
+    s = s.replace(".", "-").replace("/", "-").replace(" ", "")
+    dt = pd.to_datetime(s, errors="coerce")
+
+    if pd.notna(dt):
+        return dt.strftime("%Y-%m")
+
+    # YYYY-MM 형태 직접 허용
+    if re.match(r"^\d{4}-\d{1,2}$", s):
+        year, month = s.split("-")
+        return f"{int(year):04d}-{int(month):02d}"
+
+    return s
+
+
+def normalize_date_string(value):
+    s = clean_router_text(value)
+    if s == "":
+        return ""
+    s = s.replace(".", "-").replace("/", "-").replace(" ", "")
+    dt = pd.to_datetime(s, errors="coerce")
+    if pd.notna(dt):
+        return dt.strftime("%Y-%m-%d")
+    return s
+
+
+def router_safe_amount(value):
+    s = clean_router_text(value)
+    if s == "":
+        return 0
+    s = s.replace(",", "").replace("원", "").replace(" ", "")
+    num = pd.to_numeric(s, errors="coerce")
+    if pd.isna(num):
+        return 0
+    return int(round(float(num)))
+
+
+def router_yes(value):
+    return clean_router_text(value) == "예"
+
+
+def build_router_base_df():
+    if st.session_state.business != "아이센서":
+        return pd.DataFrame()
+
+    df = load_df("계약단지")
+    df = apply_role_filter(df)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df = df.copy()
+
+    # 라우터 컬럼 없으면 생성
+    for col in ROUTER_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+
+    # 주요 컬럼 찾기
+    site_col = get_best_column(df, ["아파트명", "아파트 명", "단지명", "현장명", "주소"])
+    manager_col = get_manager_column(df)
+    code_col = get_code_column(df)
+    region_col = get_best_column(df, ["지역"])
+    qty_col = get_best_column(df, ["수량"])
+
+    if site_col is None:
+        site_col = "단지명_표시"
+        df[site_col] = ""
+
+    if manager_col is None:
+        manager_col = "담당자_표시"
+        df[manager_col] = ""
+
+    if code_col is None:
+        code_col = "관리코드_표시"
+        df[code_col] = ""
+
+    if region_col is None:
+        region_col = "지역_표시"
+        df[region_col] = ""
+
+    if qty_col is None:
+        qty_col = "수량_표시"
+        df[qty_col] = ""
+
+    df["단지명_표시"] = df[site_col].astype(str).str.strip()
+    df["담당자_표시"] = df[manager_col].astype(str).str.strip()
+    df["관리코드_표시"] = df[code_col].astype(str).str.strip()
+    df["지역_표시"] = df[region_col].astype(str).str.strip()
+    df["수량_표시"] = df[qty_col].astype(str).str.strip()
+
+    # 라우터 컬럼 정규화
+    df["라우터사용"] = df["라우터사용"].apply(clean_router_text)
+    df["라우터개통일"] = df["라우터개통일"].apply(normalize_date_string)
+    df["라우터명의이전상태"] = df["라우터명의이전상태"].apply(clean_router_text)
+    df["라우터명의이전일"] = df["라우터명의이전일"].apply(normalize_date_string)
+    df["라우터청구대상"] = df["라우터청구대상"].apply(clean_router_text)
+    df["라우터월비용"] = df["라우터월비용"].apply(router_safe_amount)
+    df["라우터청구시작월"] = df["라우터청구시작월"].apply(normalize_year_month)
+    df["라우터청구종료월"] = df["라우터청구종료월"].apply(normalize_year_month)
+    df["라우터비고"] = df["라우터비고"].apply(clean_router_text)
+
+    # 날짜형
+    df["라우터개통일_dt"] = pd.to_datetime(df["라우터개통일"], errors="coerce")
+    df["라우터명의이전일_dt"] = pd.to_datetime(df["라우터명의이전일"], errors="coerce")
+
+    # 표시용 상태 보정
+    df["라우터명의이전상태"] = df["라우터명의이전상태"].replace("", "미입력")
+    df["라우터청구대상"] = df["라우터청구대상"].replace("", "미입력")
+    df["라우터사용"] = df["라우터사용"].replace("", "미입력")
+
+    return df
+
+
+def get_router_charge_target_df(base_df: pd.DataFrame, year: int, month: int) -> pd.DataFrame:
+    if base_df.empty:
+        return pd.DataFrame()
+
+    target_ym = f"{int(year):04d}-{int(month):02d}"
+    df = base_df.copy()
+
+    # 청구 대상 기본 조건
+    df = df[
+        (df["라우터사용"] == "예") &
+        (df["라우터청구대상"].isin(["청구", "청구대상"])) &
+        (df["라우터월비용"] > 0)
+    ].copy()
+
+    if df.empty:
+        return df
+
+    # 시작월 조건
+    start_ok = df["라우터청구시작월"].astype(str).str.strip().eq("") | (df["라우터청구시작월"] <= target_ym)
+    df = df[start_ok].copy()
+
+    if df.empty:
+        return df
+
+    # 종료월 조건
+    end_ok = df["라우터청구종료월"].astype(str).str.strip().eq("") | (df["라우터청구종료월"] >= target_ym)
+    df = df[end_ok].copy()
+
+    if df.empty:
+        return df
+
+    # 이전완료 제외
+    df = df[df["라우터명의이전상태"] != "이전완료"].copy()
+
+    return df
+
+
+def get_router_issue_df(base_df: pd.DataFrame) -> pd.DataFrame:
+    if base_df.empty:
+        return pd.DataFrame()
+
+    df = base_df.copy()
+
+    cond = (
+        (df["라우터사용"] == "예") &
+        (
+            ((df["라우터청구대상"].isin(["청구", "청구대상"])) & (df["라우터월비용"] <= 0)) |
+            ((df["라우터명의이전상태"] == "이전완료") & (df["라우터청구대상"] == "청구")) |
+            ((df["라우터명의이전상태"].isin(["이전대기", "이전거부"])) & (df["라우터청구시작월"] == "")) |
+            ((df["라우터사용"] == "예") & (df["라우터청구대상"] == "미입력")) |
+            ((df["라우터사용"] == "예") & (df["라우터명의이전상태"] == "미입력"))
+        )
+    )
+
+    return df[cond].copy()
+
+def get_router_warning_df(base_df: pd.DataFrame, overdue_days: int = 30) -> pd.DataFrame:
+    if base_df.empty:
+        return pd.DataFrame()
+
+    df = base_df.copy()
+    today = pd.Timestamp(datetime.today().date())
+
+    df["개통후경과일"] = None
+    if "라우터개통일_dt" in df.columns:
+        df["개통후경과일"] = df["라우터개통일_dt"].apply(
+            lambda x: (today - x).days if pd.notna(x) else None
+        )
+
+    cond_waiting_long = (
+        (df["라우터사용"] == "예") &
+        (df["라우터명의이전상태"].isin(["이전대기", "이전거부"])) &
+        (df["개통후경과일"].notna()) &
+        (df["개통후경과일"] >= overdue_days)
+    )
+
+    cond_claim_no_amount = (
+        (df["라우터사용"] == "예") &
+        (df["라우터청구대상"].isin(["청구", "청구대상"])) &
+        (pd.to_numeric(df["라우터월비용"], errors="coerce").fillna(0) <= 0)
+    )
+
+    cond_done_but_claim = (
+        (df["라우터사용"] == "예") &
+        (df["라우터명의이전상태"] == "이전완료") &
+        (df["라우터청구대상"].isin(["청구", "청구대상"]))
+    )
+
+    cond_missing_start = (
+        (df["라우터사용"] == "예") &
+        (df["라우터청구대상"].isin(["청구", "청구대상"])) &
+        (df["라우터청구시작월"].astype(str).str.strip() == "")
+    )
+
+    warn_df = df[
+        cond_waiting_long | cond_claim_no_amount | cond_done_but_claim | cond_missing_start
+    ].copy()
+
+    if warn_df.empty:
+        return warn_df
+
+    def make_warning_reason(row):
+        reasons = []
+
+        days = row.get("개통후경과일", None)
+        status = str(row.get("라우터명의이전상태", "")).strip()
+        target = str(row.get("라우터청구대상", "")).strip()
+        amount = pd.to_numeric(row.get("라우터월비용", 0), errors="coerce")
+        start_ym = str(row.get("라우터청구시작월", "")).strip()
+
+        if status in ["이전대기", "이전거부"] and pd.notna(days) and days >= overdue_days:
+            reasons.append(f"개통 후 {int(days)}일 경과")
+
+        if target == "청구" and (pd.isna(amount) or float(amount) <= 0):
+            reasons.append("청구대상인데 월비용 0")
+
+        if status == "이전완료" and target == "청구":
+            reasons.append("이전완료인데 청구중")
+
+        if target == "청구" and start_ym == "":
+            reasons.append("청구시작월 미입력")
+
+        return " / ".join(reasons)
+
+    warn_df["경고사유"] = warn_df.apply(make_warning_reason, axis=1)
+    return warn_df
+
+
+def build_router_claim_export_df(base_df: pd.DataFrame, year: int, month: int) -> pd.DataFrame:
+    target_df = get_router_charge_target_df(base_df, year, month)
+
+    if target_df.empty:
+        return pd.DataFrame(columns=[
+            "청구년월", "관리코드", "단지명", "담당자", "지역", "수량",
+            "라우터명의이전상태", "라우터청구대상", "라우터월비용", "비고"
+        ])
+
+    export_df = target_df.copy()
+    export_df["청구년월"] = f"{int(year):04d}-{int(month):02d}"
+
+    export_df = export_df[[
+        "청구년월",
+        "관리코드_표시",
+        "단지명_표시",
+        "담당자_표시",
+        "지역_표시",
+        "수량_표시",
+        "라우터명의이전상태",
+        "라우터청구대상",
+        "라우터월비용",
+        "라우터비고",
+    ]].copy()
+
+    export_df = export_df.rename(columns={
+        "관리코드_표시": "관리코드",
+        "단지명_표시": "단지명",
+        "담당자_표시": "담당자",
+        "지역_표시": "지역",
+        "수량_표시": "수량",
+        "라우터비고": "비고",
+    })
+
+    return export_df
+
+def page_router_management():
+    st.title("📡 아이센서 라우터 관리")
+
+    if st.session_state.business != "아이센서":
+        st.info("라우터 관리는 아이센서 사업에서만 사용합니다.")
+        return
+
+    base_df = build_router_base_df()
+
+    if base_df.empty:
+        st.warning("계약단지 데이터가 없습니다.")
+        return
+
+    current_year = datetime.today().year
+    current_month = datetime.today().month
+    current_ym = f"{current_year:04d}-{current_month:02d}"
+
+    router_df = base_df[base_df["라우터사용"] == "예"].copy()
+    waiting_df = router_df[router_df["라우터명의이전상태"] == "이전대기"].copy()
+    rejected_df = router_df[router_df["라우터명의이전상태"] == "이전거부"].copy()
+    finished_df = router_df[router_df["라우터명의이전상태"] == "이전완료"].copy()
+    charge_target_df = get_router_charge_target_df(base_df, current_year, current_month)
+    issue_df = get_router_issue_df(base_df)
+    warning_df = get_router_warning_df(base_df, overdue_days=30)
+
+    total_charge_cost = int(charge_target_df["라우터월비용"].sum()) if not charge_target_df.empty else 0
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("라우터 사용 단지", len(router_df))
+    c2.metric("이전대기", len(waiting_df))
+    c3.metric("이전거부", len(rejected_df))
+    c4.metric("이전완료", len(finished_df))
+    c5.metric(f"{current_ym} 청구대상건수", len(charge_target_df))
+    c6.metric(f"{current_ym} 청구총액", f"{total_charge_cost:,}")
+        # 수금 기준 KPI
+    billing_df, unpaid_df, manager_df = load_billing_dashboard_data()
+
+    month_billing_df = billing_df[billing_df["기준월"].astype(str).str.strip() == current_ym].copy() if not billing_df.empty else pd.DataFrame()
+    month_unpaid_df = unpaid_df[unpaid_df["기준월"].astype(str).str.strip() == current_ym].copy() if not unpaid_df.empty else pd.DataFrame()
+
+    month_unpaid_amount = 0
+    month_unpaid_count = 0
+
+    if not month_unpaid_df.empty:
+        month_unpaid_amount = int(pd.to_numeric(month_unpaid_df["미수금"], errors="coerce").fillna(0).sum())
+        month_unpaid_count = len(month_unpaid_df)
+
+    k1, k2 = st.columns(2)
+    k1.metric(f"{current_ym} 미수금", f"{month_unpaid_amount:,}")
+    k2.metric(f"{current_ym} 미입금건수", month_unpaid_count)
+
+    if not warning_df.empty:
+        st.error(f"경고 항목 {len(warning_df)}건이 있습니다. 아래 '경고/누락 확인'에서 확인하세요.")
+    elif not issue_df.empty:
+        st.warning(f"입력 보완 필요 항목 {len(issue_df)}건이 있습니다.")
+    else:
+        st.success("라우터 데이터 상태가 양호합니다.")
+
+    st.divider()
+
+    f1, f2, f3, f4 = st.columns(4)
+
+    manager_options = ["전체"] + sorted([x for x in router_df["담당자_표시"].astype(str).unique().tolist() if x.strip() != ""])
+    status_options = ["전체"] + sorted([x for x in router_df["라우터명의이전상태"].astype(str).unique().tolist() if x.strip() != ""])
+    billing_options = ["전체"] + sorted([x for x in router_df["라우터청구대상"].astype(str).unique().tolist() if x.strip() != ""])
+    region_options = ["전체"] + sorted([x for x in router_df["지역_표시"].astype(str).unique().tolist() if x.strip() != ""])
+
+    sel_manager = f1.selectbox("담당자", manager_options, key="router_manager_filter")
+    sel_status = f2.selectbox("명의이전상태", status_options, key="router_status_filter")
+    sel_billing = f3.selectbox("청구대상", billing_options, key="router_billing_filter")
+    sel_region = f4.selectbox("지역", region_options, key="router_region_filter")
+
+    keyword = st.text_input("단지명 / 관리코드 / 비고 검색", key="router_keyword")
+
+    view_df = router_df.copy()
+
+    if sel_manager != "전체":
+        view_df = view_df[view_df["담당자_표시"] == sel_manager]
+    if sel_status != "전체":
+        view_df = view_df[view_df["라우터명의이전상태"] == sel_status]
+    if sel_billing != "전체":
+        view_df = view_df[view_df["라우터청구대상"] == sel_billing]
+    if sel_region != "전체":
+        view_df = view_df[view_df["지역_표시"] == sel_region]
+
+    if keyword.strip():
+        kw = keyword.strip()
+        view_df = view_df[
+            view_df["단지명_표시"].astype(str).str.contains(kw, case=False, na=False) |
+            view_df["관리코드_표시"].astype(str).str.contains(kw, case=False, na=False) |
+            view_df["라우터비고"].astype(str).str.contains(kw, case=False, na=False)
+        ].copy()
+
+    st.subheader("1. 라우터 전체 현황")
+    show_cols = [
+        "관리코드_표시", "단지명_표시", "담당자_표시", "지역_표시", "수량_표시",
+        "라우터사용", "라우터개통일", "라우터명의이전상태", "라우터명의이전일",
+        "라우터청구대상", "라우터월비용", "라우터청구시작월", "라우터청구종료월", "라우터비고"
+    ]
+    show_df = view_df[show_cols].copy()
+    show_df = show_df.rename(columns={
+        "관리코드_표시": "관리코드",
+        "단지명_표시": "단지명",
+        "담당자_표시": "담당자",
+        "지역_표시": "지역",
+        "수량_표시": "수량",
+    })
+    styled_dataframe(show_df)
+
+    st.divider()
+
+    st.subheader(f"2. {current_ym} 청구 대상")
+    if charge_target_df.empty:
+        st.info("이번달 청구 대상이 없습니다.")
+    else:
+        target_show = charge_target_df[[
+            "관리코드_표시", "단지명_표시", "담당자_표시", "지역_표시",
+            "라우터명의이전상태", "라우터청구대상", "라우터월비용",
+            "라우터청구시작월", "라우터청구종료월", "라우터비고"
+        ]].copy()
+        target_show = target_show.rename(columns={
+            "관리코드_표시": "관리코드",
+            "단지명_표시": "단지명",
+            "담당자_표시": "담당자",
+            "지역_표시": "지역",
+        })
+        st.dataframe(target_show, use_container_width=True, hide_index=True)
+        download_section(f"{current_ym}_라우터청구대상", target_show, f"라우터청구대상_{current_ym}")
+
+    st.divider()
+
+    st.subheader("3. 청구 엑셀 자동 생성")
+    g1, g2 = st.columns(2)
+    claim_year = g1.number_input("청구 연도", min_value=2024, max_value=2100, value=current_year, step=1, key="router_claim_year")
+    claim_month = g2.selectbox("청구 월", list(range(1, 13)), index=current_month - 1, key="router_claim_month")
+
+    claim_export_df = build_router_claim_export_df(base_df, int(claim_year), int(claim_month))
+    claim_ym = f"{int(claim_year):04d}-{int(claim_month):02d}"
+
+    if claim_export_df.empty:
+        st.info(f"{claim_ym} 청구 생성 대상이 없습니다.")
+    else:
+        st.success(f"{claim_ym} 청구 생성 대상 {len(claim_export_df)}건 / 합계 {int(claim_export_df['라우터월비용'].sum()):,}원")
+        st.dataframe(claim_export_df, use_container_width=True, hide_index=True)
+
+        b1, b2 = st.columns([1, 1])
+
+        with b1:
+            download_section(
+                f"{claim_ym}_라우터청구리스트",
+                claim_export_df,
+                f"라우터청구리스트_{claim_ym}"
+            )
+
+        with b2:
+            if st.button(f"{claim_ym} 이번달 청구 생성", key=f"create_billing_{claim_ym}"):
+                result = add_monthly_billing_data(claim_export_df)
+
+                if result["added_count"] > 0:
+                    st.success(
+                        f"수금관리 생성 완료: 신규 {result['added_count']}건 / "
+                        f"중복 제외 {result['duplicate_count']}건"
+                    )
+                else:
+                    st.warning(
+                        f"신규 생성 없음. 이미 모두 생성된 월입니다. "
+                        f"(중복 제외 {result['duplicate_count']}건)"
+                    )
+
+                st.rerun()
+
+        billing_df, unpaid_df, manager_df = load_billing_dashboard_data()
+
+        st.markdown("### 3-1. 수금관리")
+        if billing_df.empty:
+            st.info("수금관리 데이터가 없습니다.")
+        else:
+            total_unpaid = int(pd.to_numeric(billing_df["미수금"], errors="coerce").fillna(0).sum())
+            unpaid_count = int((pd.to_numeric(billing_df["미수금"], errors="coerce").fillna(0) > 0).sum())
+
+            s1, s2 = st.columns(2)
+            s1.metric("총 미수금", f"{total_unpaid:,}")
+            s2.metric("미입금건수", unpaid_count)
+
+            month_billing_df = billing_df[billing_df["기준월"].astype(str).str.strip() == claim_ym].copy()
+            month_billing_df["입금여부"] = month_billing_df["입금여부"].replace("", "미입금")
+
+            if month_billing_df.empty:
+                st.info(f"{claim_ym} 수금관리 데이터가 없습니다.")
+            else:
+                st.dataframe(month_billing_df, use_container_width=True, hide_index=True)
+
+                st.markdown("#### 입금 처리")
+                unpaid_candidates = month_billing_df[
+                    pd.to_numeric(month_billing_df["미수금"], errors="coerce").fillna(0) > 0
+                ].copy()
+
+                if unpaid_candidates.empty:
+                    st.success("이 달의 청구 건은 모두 입금 처리되었습니다.")
+                else:
+                    unpaid_candidates["선택표시"] = (
+                        unpaid_candidates["단지명"].astype(str).str.strip() +
+                        " / " +
+                        unpaid_candidates["담당자"].astype(str).str.strip() +
+                        " / " +
+                        unpaid_candidates["청구금액"].astype(str).str.strip() + "원"
+                    )
+
+                    selected_label = st.selectbox(
+                        "입금 처리할 항목 선택",
+                        unpaid_candidates["선택표시"].tolist(),
+                        key=f"paid_select_{claim_ym}"
+                    )
+
+                    selected_row = unpaid_candidates[
+                        unpaid_candidates["선택표시"] == selected_label
+                    ].iloc[0]
+
+                    if st.button("선택 항목 입금 처리", key=f"mark_paid_{claim_ym}"):
+                        ok = mark_billing_paid(
+                            target_month=selected_row["기준월"],
+                            target_site=selected_row["단지명"]
+                        )
+
+                        if ok:
+                            st.success(f"{selected_row['단지명']} 입금 처리 완료")
+                        else:
+                            st.error("입금 처리 대상 행을 찾지 못했습니다.")
+
+                        st.rerun()
+
+        st.markdown("### 3-2. 미입금관리")
+        if unpaid_df.empty:
+            st.success("현재 미입금 항목이 없습니다.")
+        else:
+            month_unpaid_df = unpaid_df[unpaid_df["기준월"].astype(str).str.strip() == claim_ym].copy()
+            st.dataframe(month_unpaid_df, use_container_width=True, hide_index=True)
+
+        st.markdown("### 3-3. 담당자별현황")
+        if manager_df.empty:
+            st.info("담당자별현황 데이터가 없습니다.")
+        else:
+            st.dataframe(manager_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    st.subheader("6. 경고 / 누락 확인")
+    if warning_df.empty:
+        st.success("긴급 경고 항목이 없습니다.")
+    else:
+        warn_show = warning_df[[
+            "관리코드_표시", "단지명_표시", "담당자_표시", "지역_표시",
+            "라우터명의이전상태", "라우터청구대상", "라우터월비용",
+            "라우터청구시작월", "라우터청구종료월", "경고사유"
+        ]].copy()
+        warn_show = warn_show.rename(columns={
+            "관리코드_표시": "관리코드",
+            "단지명_표시": "단지명",
+            "담당자_표시": "담당자",
+            "지역_표시": "지역",
+        })
+        st.dataframe(warn_show, use_container_width=True, hide_index=True)
+        download_section("라우터_경고항목", warn_show, "라우터_경고항목")
+
+    st.divider()
+    st.info("※ 현재 화면은 계약단지 구글시트의 라우터 컬럼을 읽어서 보여주는 관리 화면입니다. 값 수정은 원본 구글시트에서 진행해 주세요.")
 
 # =========================================================
 # 메인
@@ -1338,6 +2235,9 @@ def main():
             [("영업담당", ["담당자", "영업담당"]), ("지역", "지역"), ("상품", "상품"), ("시공여부", "시공여부")],
             "contract_search",
         )
+
+    elif menu == "라우터 관리":
+        page_router_management()    
 
     elif menu == "계약접수현황":
         generic_data_page(
