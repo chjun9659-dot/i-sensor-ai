@@ -196,6 +196,85 @@ def get_current_sheet_urls():
 # =========================================================
 # 구글 시트 연동
 # =========================================================
+import gspread
+from google.oauth2.service_account import Credentials
+
+def get_gsheet_client():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    key_path = os.path.join(base_dir, "service_account.json")
+
+    creds = Credentials.from_service_account_file(key_path, scopes=scope)
+    client = gspread.authorize(creds)
+
+    st.session_state["google_auth_debug"] = {
+        "base_dir": base_dir,
+        "key_path": key_path,
+        "client_email": creds.service_account_email,
+    }
+
+    return client
+
+    
+def append_to_gsheet(sheet_url, row_data, worksheet_index=0):
+    try:
+        client = get_gsheet_client()
+
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(worksheet_index)
+        worksheet.append_row(row_data)
+
+        return True
+    except Exception as e:
+        st.error(f"구글 저장 오류: {e}")
+        return False
+
+def update_billing_status_in_gsheet(sheet_url, 기준월, 단지명, 담당자, 청구금액, worksheet_index=0):
+    try:
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(worksheet_index)
+
+        values = worksheet.get_all_values()
+        if not values or len(values) < 2:
+            st.session_state["google_update_msg"] = "구글 시트에 데이터가 없습니다."
+            return False
+
+        # 1행 헤더, 2행부터 데이터
+        for i, row in enumerate(values[1:], start=2):
+            row_기준월 = str(row[0]).strip() if len(row) > 0 else ""
+            row_단지명 = str(row[1]).strip() if len(row) > 1 else ""
+            row_담당자 = str(row[2]).strip() if len(row) > 2 else ""
+            row_청구금액 = int(pd.to_numeric(row[3], errors="coerce")) if len(row) > 3 and str(row[3]).strip() != "" else 0
+
+            if (
+                row_기준월 == 기준월 and
+                row_단지명 == 단지명 and
+                row_담당자 == 담당자 and
+                row_청구금액 == 청구금액
+            ):
+                worksheet.update_cell(i, 5, "입금")  # E열만 수정
+                st.session_state["google_update_msg"] = (
+                    f"구글 수금관리 시트 업데이트 완료: {단지명} / 행={i}"
+                )
+                return True
+
+        st.session_state["google_update_msg"] = (
+            f"구글 시트에서 일치 행을 찾지 못했습니다: {기준월} / {단지명} / {담당자} / {청구금액}"
+        )
+        return False
+
+    except Exception as e:
+        st.session_state["google_update_msg"] = f"구글 수금관리 업데이트 오류: {type(e).__name__} / {e}"
+        return False
+
+
 def convert_google_sheet_url_to_csv(url: str) -> str:
     sheet_match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
     gid_match = re.search(r"gid=(\d+)", url)
@@ -293,7 +372,7 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
 
         drop_cols = [c for c in df_inner.columns if is_currency_only_name(c)]
         if drop_cols:
-            df_inner = df_inner.drop(columns=drop_cols, errors="ignore")
+            df_inner = df_inner.drop(columns=drop_cols, errors="ignore")  
             
         # -----------------------------------------
         # 라우터 컬럼명 보정
@@ -573,6 +652,9 @@ MONEY_FILE_MAP = {
     "담당자별현황": os.path.join(DATA_DIR, "sensor_manager_summary.csv"),
 }
 
+# 실사용 구글 수금관리 시트 URL
+BILLING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1QDf1No9Nz5CVu3BGxLr7omWNSLi8Pth7FKTBChh6ds0/edit?gid=970462186#gid=970462186"
+
 
 def save_money_df(key: str, df: pd.DataFrame):
     path = MONEY_FILE_MAP[key]
@@ -622,6 +704,102 @@ def normalize_payment_status(value):
     return ""
 
 
+def safe_int(value, default=0):
+    num = pd.to_numeric(value, errors="coerce")
+    if pd.isna(num):
+        return default
+    return int(num)
+
+
+def load_billing_from_gsheet(sheet_url, worksheet_index=0) -> pd.DataFrame:
+    try:
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(worksheet_index)
+
+        values = worksheet.get_all_values()
+        if not values or len(values) < 2:
+            return pd.DataFrame(columns=["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"])
+
+        headers = [str(x).strip() for x in values[0]]
+        rows = values[1:]
+        df = pd.DataFrame(rows, columns=headers)
+
+        for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
+            if col not in df.columns:
+                df[col] = ""
+
+        df = df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+
+        df["기준월"] = df["기준월"].astype(str).str.strip()
+        df["단지명"] = df["단지명"].astype(str).str.strip()
+        df["담당자"] = df["담당자"].astype(str).str.strip()
+        df["입금여부"] = df["입금여부"].astype(str).apply(normalize_payment_status)
+
+        df["청구금액"] = pd.to_numeric(df["청구금액"], errors="coerce").fillna(0)
+        df["미수금"] = pd.to_numeric(df["미수금"], errors="coerce").fillna(0)
+
+        df.loc[(df["청구금액"] <= 0) & (df["미수금"] > 0), "청구금액"] = df["미수금"]
+        df.loc[(df["미수금"] <= 0) & (df["청구금액"] > 0) & (df["입금여부"] != "입금"), "미수금"] = df["청구금액"]
+        df.loc[df["입금여부"] == "입금", "미수금"] = 0
+
+        df["청구금액"] = df["청구금액"].astype(int)
+        df["미수금"] = df["미수금"].astype(int)
+
+        return df
+
+    except Exception as e:
+        st.session_state["google_update_msg"] = f"수금관리 구글시트 불러오기 오류: {type(e).__name__} / {e}"
+        return pd.DataFrame(columns=["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"])
+
+
+def update_billing_status_in_gsheet(sheet_url, 기준월, 단지명, 담당자, 청구금액, worksheet_index=0):
+    try:
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(worksheet_index)
+
+        values = worksheet.get_all_values()
+        if not values or len(values) < 2:
+            st.session_state["google_update_msg"] = "구글 시트에 데이터가 없습니다."
+            return False
+
+        target_ym = str(기준월).strip()
+        target_name = str(단지명).strip()
+        target_manager = str(담당자).strip()
+
+        for i, row in enumerate(values[1:], start=2):
+            row_기준월 = str(row[0]).strip() if len(row) > 0 else ""
+            row_단지명 = str(row[1]).strip() if len(row) > 1 else ""
+            row_담당자 = str(row[2]).strip() if len(row) > 2 else ""
+
+            if (
+                row_기준월 == target_ym and
+                row_단지명 == target_name and
+                row_담당자 == target_manager
+            ):
+                worksheet.update_cell(i, 5, "입금")
+                st.session_state["google_update_msg"] = (
+                    f"구글 시트 업데이트 완료: {target_name} / 행={i}"
+                )
+                return True
+
+        st.session_state["google_update_msg"] = (
+            f"일치 행을 찾지 못했습니다: 기준월={target_ym}, 단지명={target_name}, 담당자={target_manager}"
+        )
+        return False
+
+    except Exception as e:
+        st.session_state["google_update_msg"] = f"구글 수금관리 업데이트 오류: {type(e).__name__} / {e}"
+        return False
+
+    except Exception as e:
+        st.session_state["google_update_msg"] = f"구글 수금관리 업데이트 오류: {type(e).__name__} / {e}"
+        return False
+
+
 def build_billing_rows_from_router_claim_df(claim_df: pd.DataFrame) -> pd.DataFrame:
     if claim_df is None or claim_df.empty:
         return pd.DataFrame(columns=[
@@ -653,121 +831,132 @@ def build_billing_rows_from_router_claim_df(claim_df: pd.DataFrame) -> pd.DataFr
 
 
 def add_monthly_billing_data(claim_df: pd.DataFrame):
-    ensure_money_files()
+    """
+    계약단지에서 추출한 이번달 청구대상을
+    구글 실사용시트(BILLING_SHEET_URL)에 직접 추가한다.
+    이미 같은 기준월 + 단지명 + 담당자 행이 있으면 중복 생성하지 않는다.
+    """
+    try:
+        if claim_df is None or claim_df.empty:
+            return {
+                "added_count": 0,
+                "duplicate_count": 0,
+                "total_count": 0
+            }
 
-    new_rows = build_billing_rows_from_router_claim_df(claim_df)
-    billing_df = load_money_df("수금관리")
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", BILLING_SHEET_URL).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(0)
 
-    if billing_df.empty:
-        billing_df = pd.DataFrame(columns=[
-            "기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"
-        ])
+        values = worksheet.get_all_values()
+        if not values:
+            # 헤더가 아예 없으면 생성
+            worksheet.append_row(["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"])
+            values = [["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]]
 
-    # 컬럼 보정
-    for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
-        if col not in billing_df.columns:
-            billing_df[col] = ""
+        headers = [str(x).strip() for x in values[0]]
+        rows = values[1:] if len(values) > 1 else []
 
-    # 중복 컬럼 제거
-    billing_df = billing_df.loc[:, ~billing_df.columns.duplicated()].copy()
+        # 기존 행의 중복키 수집
+        existing_keys = set()
+        for row in rows:
+            row_기준월 = str(row[0]).strip() if len(row) > 0 else ""
+            row_단지명 = str(row[1]).strip() if len(row) > 1 else ""
+            row_담당자 = str(row[2]).strip() if len(row) > 2 else ""
+            key = f"{row_기준월}||{row_단지명}||{row_담당자}"
+            existing_keys.add(key)
 
-    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
+        add_rows = []
+        duplicate_count = 0
 
-    if new_rows.empty:
+        work_df = claim_df.copy()
+
+        if "청구년월" not in work_df.columns:
+            work_df["청구년월"] = ""
+
+        if "단지명" not in work_df.columns:
+            work_df["단지명"] = ""
+
+        if "담당자" not in work_df.columns:
+            work_df["담당자"] = ""
+
+        if "라우터월비용" not in work_df.columns:
+            work_df["라우터월비용"] = 0
+
+        for _, r in work_df.iterrows():
+            기준월 = str(r.get("청구년월", "")).strip()
+            단지명 = str(r.get("단지명", "")).strip()
+            담당자 = str(r.get("담당자", "")).strip()
+            청구금액 = int(pd.to_numeric(r.get("라우터월비용", 0), errors="coerce") or 0)
+
+            if not 기준월 or not 단지명:
+                continue
+
+            if 청구금액 <= 0:
+                continue
+
+            key = f"{기준월}||{단지명}||{담당자}"
+
+            if key in existing_keys:
+                duplicate_count += 1
+                continue
+
+            add_rows.append([
+                기준월,
+                단지명,
+                담당자,
+                청구금액,
+                "",         # 입금여부
+                청구금액    # 미수금
+            ])
+            existing_keys.add(key)
+
+        if add_rows:
+            worksheet.append_rows(add_rows, value_input_option="USER_ENTERED")
+
+        total_count = len(rows) + len(add_rows)
+
+        st.session_state["google_update_msg"] = (
+            f"자동청구 생성 완료 / 신규 {len(add_rows)}건 / 중복 제외 {duplicate_count}건"
+        )
+
+        return {
+            "added_count": len(add_rows),
+            "duplicate_count": duplicate_count,
+            "total_count": total_count
+        }
+
+    except Exception as e:
+        st.session_state["google_update_msg"] = f"자동청구 생성 오류: {type(e).__name__} / {e}"
         return {
             "added_count": 0,
             "duplicate_count": 0,
-            "total_count": len(billing_df)
+            "total_count": 0
         }
-
-    billing_df["기준월"] = billing_df["기준월"].astype(str).str.strip()
-    billing_df["단지명"] = billing_df["단지명"].astype(str).str.strip()
-    billing_df["담당자"] = billing_df["담당자"].astype(str).str.strip()
-    billing_df["입금여부"] = billing_df["입금여부"].apply(normalize_payment_status)
-    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0).astype(int)
-
-    # 기존 데이터의 미수금 재계산
-    st.write("수금관리 컬럼 확인:", list(billing_df.columns))
-    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0)
-
-    billing_df["미수금"] = billing_df["청구금액"]
-    billing_df.loc[billing_df["입금여부"] == "입금", "미수금"] = 0
-    billing_df["미수금"] = billing_df["미수금"].astype(int)
-
-    billing_df["_dup_key"] = (
-        billing_df["기준월"].astype(str).str.strip() + "||" +
-        billing_df["단지명"].astype(str).str.strip()
-    )
-
-    new_rows["기준월"] = new_rows["기준월"].astype(str).str.strip()
-    new_rows["단지명"] = new_rows["단지명"].astype(str).str.strip()
-    new_rows["담당자"] = new_rows["담당자"].astype(str).str.strip()
-    new_rows["입금여부"] = new_rows["입금여부"].apply(normalize_payment_status)
-    new_rows["청구금액"] = pd.to_numeric(new_rows["청구금액"], errors="coerce").fillna(0).astype(int)
-    new_rows["미수금"] = new_rows["청구금액"]
-
-    new_rows["_dup_key"] = (
-        new_rows["기준월"].astype(str).str.strip() + "||" +
-        new_rows["단지명"].astype(str).str.strip()
-    )
-
-    existing_keys = set(billing_df["_dup_key"].tolist())
-    add_df = new_rows[~new_rows["_dup_key"].isin(existing_keys)].copy()
-    duplicate_count = len(new_rows) - len(add_df)
-
-    if not add_df.empty:
-        billing_df = pd.concat([billing_df, add_df], ignore_index=True)
-
-    billing_df = billing_df.drop(columns=["_dup_key"], errors="ignore")
-    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
-    save_money_df("수금관리", billing_df)
-
-    rebuild_billing_views()
-
-    return {
-        "added_count": len(add_df),
-        "duplicate_count": duplicate_count,
-        "total_count": len(billing_df)
-    }
 
 
 def rebuild_billing_views():
-    ensure_money_files()
+    """
+    기존 로컬 기반 함수는 더 이상 핵심 로직에서 사용하지 않음.
+    남겨두되 동작은 최소화.
+    """
+    return
 
-    billing_df = load_money_df("수금관리")
+
+def load_billing_dashboard_data():
+    """
+    앱 수금관리 화면은 이제 구글 실사용시트를 원본으로 사용
+    """
+    billing_df = load_billing_from_gsheet(BILLING_SHEET_URL)
+
     if billing_df.empty:
         unpaid_df = pd.DataFrame(columns=["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"])
         manager_df = pd.DataFrame(columns=["담당자", "미수금합계"])
-        save_money_df("미입금관리", unpaid_df)
-        save_money_df("담당자별현황", manager_df)
-        return
-
-    for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
-        if col not in billing_df.columns:
-            billing_df[col] = ""
-
-    # 중복 컬럼 제거
-    billing_df = billing_df.loc[:, ~billing_df.columns.duplicated()].copy()
-
-    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
-
-    billing_df["기준월"] = billing_df["기준월"].astype(str).str.strip()
-    billing_df["단지명"] = billing_df["단지명"].astype(str).str.strip()
-    billing_df["담당자"] = billing_df["담당자"].astype(str).str.strip()
-    billing_df["입금여부"] = billing_df["입금여부"].apply(normalize_payment_status)
-    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0).astype(int)
-
-    billing_df["미수금"] = billing_df.apply(
-        lambda r: 0 if normalize_payment_status(r["입금여부"]) == "입금"
-        else int(r["청구금액"] or 0),
-        axis=1
-    )
-
-    save_money_df("수금관리", billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy())
+        return billing_df, unpaid_df, manager_df
 
     unpaid_df = billing_df[billing_df["미수금"] > 0].copy()
     unpaid_df = unpaid_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
-    save_money_df("미입금관리", unpaid_df)
 
     if unpaid_df.empty:
         manager_df = pd.DataFrame(columns=["담당자", "미수금합계"])
@@ -780,54 +969,25 @@ def rebuild_billing_views():
             .sort_values("미수금합계", ascending=False)
         )
 
-    save_money_df("담당자별현황", manager_df)
-
-
-def load_billing_dashboard_data():
-    ensure_money_files()
-    rebuild_billing_views()
-
-    billing_df = load_money_df("수금관리")
-    unpaid_df = load_money_df("미입금관리")
-    manager_df = load_money_df("담당자별현황")
-
     return billing_df, unpaid_df, manager_df
 
-def mark_billing_paid(target_month: str, target_site: str):
-    ensure_money_files()
 
-    billing_df = load_money_df("수금관리")
-    if billing_df.empty:
+def mark_billing_paid(기준월, 단지명, 담당자, 청구금액):
+    """
+    입금 처리는 구글 실사용시트만 수정
+    """
+    amount_num = pd.to_numeric(청구금액, errors="coerce")
+    if pd.isna(amount_num):
+        st.session_state["google_update_msg"] = f"청구금액이 비어 있거나 숫자가 아닙니다: {청구금액}"
         return False
 
-    for col in ["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]:
-        if col not in billing_df.columns:
-            billing_df[col] = ""
-
-    billing_df = billing_df.loc[:, ~billing_df.columns.duplicated()].copy()
-    billing_df = billing_df[["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"]].copy()
-
-    billing_df["기준월"] = billing_df["기준월"].astype(str).str.strip()
-    billing_df["단지명"] = billing_df["단지명"].astype(str).str.strip()
-    billing_df["담당자"] = billing_df["담당자"].astype(str).str.strip()
-    billing_df["입금여부"] = billing_df["입금여부"].apply(normalize_payment_status)
-    billing_df["청구금액"] = pd.to_numeric(billing_df["청구금액"], errors="coerce").fillna(0).astype(int)
-
-    mask = (
-        (billing_df["기준월"] == str(target_month).strip()) &
-        (billing_df["단지명"] == str(target_site).strip())
+    return update_billing_status_in_gsheet(
+        BILLING_SHEET_URL,
+        str(기준월).strip(),
+        str(단지명).strip(),
+        str(담당자).strip(),
+        int(amount_num)
     )
-
-    if mask.sum() == 0:
-        return False
-
-    billing_df.loc[mask, "입금여부"] = "입금"
-    billing_df.loc[mask, "미수금"] = 0
-    billing_df.loc[mask, "입금일"] = datetime.now().strftime("%Y-%m-%d")
-
-    save_money_df("수금관리", billing_df)
-    rebuild_billing_views()
-    return True
 
 # =========================================================
 # 로그인
@@ -1403,6 +1563,7 @@ def page_tasks():
             }
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             save_tasks_df(df)
+
             st.success("추가 완료")
             st.rerun()
 
@@ -2074,12 +2235,21 @@ def page_router_management():
                         f"신규 생성 없음. 이미 모두 생성된 월입니다. "
                         f"(중복 제외 {result['duplicate_count']}건)"
                     )
-
+                if st.session_state.get("google_update_msg"):
+                                    st.info(st.session_state["google_update_msg"])
+                                    
                 st.rerun()
+
+
+        st.markdown("### 3-1. 수금관리")
+        current_msg = st.session_state.get("google_update_msg", "")
+        if current_msg:
+            st.error(current_msg)
+            st.session_state["google_update_msg"] = ""
 
         billing_df, unpaid_df, manager_df = load_billing_dashboard_data()
 
-        st.markdown("### 3-1. 수금관리")
+        # 기존 카드/요약
         if billing_df.empty:
             st.info("수금관리 데이터가 없습니다.")
         else:
@@ -2090,7 +2260,10 @@ def page_router_management():
             s1.metric("총 미수금", f"{total_unpaid:,}")
             s2.metric("미입금건수", unpaid_count)
 
-            month_billing_df = billing_df[billing_df["기준월"].astype(str).str.strip() == claim_ym].copy()
+            month_billing_df = billing_df[
+                billing_df["기준월"].astype(str).str.strip() == claim_ym
+            ].copy()
+
             month_billing_df["입금여부"] = month_billing_df["입금여부"].replace("", "미입금")
 
             if month_billing_df.empty:
@@ -2098,7 +2271,8 @@ def page_router_management():
             else:
                 st.dataframe(month_billing_df, use_container_width=True, hide_index=True)
 
-                st.markdown("#### 입금 처리")
+                st.markdown("### 입금 처리")
+
                 unpaid_candidates = month_billing_df[
                     pd.to_numeric(month_billing_df["미수금"], errors="coerce").fillna(0) > 0
                 ].copy()
@@ -2106,12 +2280,28 @@ def page_router_management():
                 if unpaid_candidates.empty:
                     st.success("이 달의 청구 건은 모두 입금 처리되었습니다.")
                 else:
+                    unpaid_candidates = month_unpaid_df.copy()
+
+                    unpaid_candidates["청구금액"] = pd.to_numeric(
+                        unpaid_candidates["청구금액"], errors="coerce"
+                    ).fillna(0)
+
+                    unpaid_candidates["미수금"] = pd.to_numeric(
+                        unpaid_candidates["미수금"], errors="coerce"
+                    ).fillna(unpaid_candidates["청구금액"]).fillna(0)
+
+                    unpaid_candidates["표시금액"] = unpaid_candidates["미수금"]
+                    unpaid_candidates.loc[unpaid_candidates["표시금액"] <= 0, "표시금액"] = unpaid_candidates["청구금액"]
+
+                    unpaid_candidates["표시금액"] = unpaid_candidates["표시금액"].astype(int)
+
                     unpaid_candidates["선택표시"] = (
-                        unpaid_candidates["단지명"].astype(str).str.strip() +
-                        " / " +
-                        unpaid_candidates["담당자"].astype(str).str.strip() +
-                        " / " +
-                        unpaid_candidates["청구금액"].astype(str).str.strip() + "원"
+                        unpaid_candidates["단지명"].astype(str).str.strip()
+                        + " / "
+                        + unpaid_candidates["담당자"].astype(str).str.strip()
+                        + " / "
+                        + unpaid_candidates["표시금액"].astype(str).str.strip()
+                        + "원"
                     )
 
                     selected_label = st.selectbox(
@@ -2120,22 +2310,29 @@ def page_router_management():
                         key=f"paid_select_{claim_ym}"
                     )
 
-                    selected_row = unpaid_candidates[
-                        unpaid_candidates["선택표시"] == selected_label
-                    ].iloc[0]
+                    selected_row = unpaid_candidates[unpaid_candidates["선택표시"] == selected_label].iloc[0]
 
                     if st.button("선택 항목 입금 처리", key=f"mark_paid_{claim_ym}"):
-                        ok = mark_billing_paid(
-                            target_month=selected_row["기준월"],
-                            target_site=selected_row["단지명"]
-                        )
+                        st.session_state["google_update_msg"] = ""
 
-                        if ok:
-                            st.success(f"{selected_row['단지명']} 입금 처리 완료")
+                        amount_raw = selected_row.get("표시금액", "")
+                        amount_num = pd.to_numeric(amount_raw, errors="coerce")
+
+                        if pd.isna(amount_num):
+                            st.error(f"청구금액이 비어 있거나 숫자가 아닙니다: {amount_raw}")
                         else:
-                            st.error("입금 처리 대상 행을 찾지 못했습니다.")
+                            ok = mark_billing_paid(
+                                기준월=str(selected_row.get("기준월", "")).strip(),
+                                단지명=str(selected_row.get("단지명", "")).strip(),
+                                담당자=str(selected_row.get("담당자", "")).strip(),
+                                청구금액=int(amount_num)
+                            )
 
-                        st.rerun()
+                            if ok:
+                                st.success("입금 처리 완료")
+                                st.rerun()
+                            else:
+                                st.error("입금 처리 실패")  
 
         st.markdown("### 3-2. 미입금관리")
         if unpaid_df.empty:
