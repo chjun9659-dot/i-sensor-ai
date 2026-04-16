@@ -242,34 +242,36 @@ def update_billing_status_in_gsheet(sheet_url, 기준월, 단지명, 담당자, 
             st.session_state["google_update_msg"] = "구글 시트에 데이터가 없습니다."
             return False
 
-        # 1행 헤더, 2행부터 데이터
+        target_ym = str(기준월).strip()
+        target_name = str(단지명).strip()
+        target_manager = str(담당자).strip()
+
         for i, row in enumerate(values[1:], start=2):
             row_기준월 = str(row[0]).strip() if len(row) > 0 else ""
             row_단지명 = str(row[1]).strip() if len(row) > 1 else ""
             row_담당자 = str(row[2]).strip() if len(row) > 2 else ""
-            row_청구금액 = int(pd.to_numeric(row[3], errors="coerce")) if len(row) > 3 and str(row[3]).strip() != "" else 0
 
+            # 청구금액은 비교하지 않음
             if (
-                row_기준월 == 기준월 and
-                row_단지명 == 단지명 and
-                row_담당자 == 담당자 and
-                row_청구금액 == 청구금액
+                row_기준월 == target_ym and
+                row_단지명 == target_name and
+                row_담당자 == target_manager
             ):
-                worksheet.update_cell(i, 5, "입금")  # E열만 수정
+                worksheet.update_cell(i, 5, "입금")   # E열
+                worksheet.update_cell(i, 6, 0)       # F열 미수금 0
                 st.session_state["google_update_msg"] = (
-                    f"구글 수금관리 시트 업데이트 완료: {단지명} / 행={i}"
+                    f"구글 시트 업데이트 완료: {target_name} / 행={i}"
                 )
                 return True
 
         st.session_state["google_update_msg"] = (
-            f"구글 시트에서 일치 행을 찾지 못했습니다: {기준월} / {단지명} / {담당자} / {청구금액}"
+            f"일치 행을 찾지 못했습니다: 기준월={target_ym}, 단지명={target_name}, 담당자={target_manager}"
         )
         return False
 
     except Exception as e:
         st.session_state["google_update_msg"] = f"구글 수금관리 업데이트 오류: {type(e).__name__} / {e}"
         return False
-
 
 def convert_google_sheet_url_to_csv(url: str) -> str:
     sheet_match = re.search(r"/d/([a-zA-Z0-9-_]+)", url)
