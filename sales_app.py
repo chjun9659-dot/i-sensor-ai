@@ -200,24 +200,50 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 def get_gsheet_client():
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
+    import os
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import streamlit as st
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
     ]
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     key_path = os.path.join(base_dir, "service_account.json")
 
-    creds = Credentials.from_service_account_file(key_path, scopes=scope)
-    client = gspread.authorize(creds)
+    # 1) 배포 우선: Streamlit secrets 시도
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
+        client = gspread.authorize(creds)
 
-    st.session_state["google_auth_debug"] = {
-        "base_dir": base_dir,
-        "key_path": key_path,
-        "client_email": creds.service_account_email,
-    }
+        st.session_state["google_auth_debug"] = {
+            "mode": "streamlit_secrets",
+            "client_email": creds.service_account_email,
+        }
+        return client
 
-    return client
+    except Exception as secrets_error:
+        # 2) 로컬 fallback: service_account.json 이 실제 있을 때만 사용
+        if os.path.exists(key_path):
+            creds = Credentials.from_service_account_file(key_path, scopes=scopes)
+            client = gspread.authorize(creds)
+
+            st.session_state["google_auth_debug"] = {
+                "mode": "local_json",
+                "key_path": key_path,
+                "client_email": creds.service_account_email,
+                "secrets_error": str(secrets_error),
+            }
+            return client
+
+        # 3) 둘 다 없으면 실제 원인을 보여줌
+        raise RuntimeError(
+            f"구글 인증 실패 / secrets 오류: {secrets_error} / "
+            f"로컬 JSON 없음: {key_path}"
+        )
 
     
 def append_to_gsheet(sheet_url, row_data, worksheet_index=0):
