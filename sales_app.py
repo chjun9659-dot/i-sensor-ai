@@ -258,7 +258,6 @@ def update_billing_status_in_gsheet(sheet_url, 기준월, 단지명, 담당자, 
                 row_담당자 == target_manager
             ):
                 worksheet.update_cell(i, 5, "입금")   # E열
-                worksheet.update_cell(i, 6, 0)       # F열 미수금 0
                 st.session_state["google_update_msg"] = (
                     f"구글 시트 업데이트 완료: {target_name} / 행={i}"
                 )
