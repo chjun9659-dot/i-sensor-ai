@@ -749,53 +749,6 @@ def load_billing_from_gsheet(sheet_url, worksheet_index=0) -> pd.DataFrame:
         st.session_state["google_update_msg"] = f"수금관리 구글시트 불러오기 오류: {type(e).__name__} / {e}"
         return pd.DataFrame(columns=["기준월", "단지명", "담당자", "청구금액", "입금여부", "미수금"])
 
-
-def update_billing_status_in_gsheet(sheet_url, 기준월, 단지명, 담당자, 청구금액, worksheet_index=0):
-    try:
-        client = get_gsheet_client()
-        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", sheet_url).group(1)
-        spreadsheet = client.open_by_key(sheet_id)
-        worksheet = spreadsheet.get_worksheet(worksheet_index)
-
-        values = worksheet.get_all_values()
-        if not values or len(values) < 2:
-            st.session_state["google_update_msg"] = "구글 시트에 데이터가 없습니다."
-            return False
-
-        target_ym = str(기준월).strip()
-        target_name = str(단지명).strip()
-        target_manager = str(담당자).strip()
-
-        for i, row in enumerate(values[1:], start=2):
-            row_기준월 = str(row[0]).strip() if len(row) > 0 else ""
-            row_단지명 = str(row[1]).strip() if len(row) > 1 else ""
-            row_담당자 = str(row[2]).strip() if len(row) > 2 else ""
-
-            if (
-                row_기준월 == target_ym and
-                row_단지명 == target_name and
-                row_담당자 == target_manager
-            ):
-                worksheet.update_cell(i, 5, "입금")
-                st.session_state["google_update_msg"] = (
-                    f"구글 시트 업데이트 완료: {target_name} / 행={i}"
-                )
-                return True
-
-        st.session_state["google_update_msg"] = (
-            f"일치 행을 찾지 못했습니다: 기준월={target_ym}, 단지명={target_name}, 담당자={target_manager}"
-        )
-        return False
-
-    except Exception as e:
-        st.session_state["google_update_msg"] = f"구글 수금관리 업데이트 오류: {type(e).__name__} / {e}"
-        return False
-
-    except Exception as e:
-        st.session_state["google_update_msg"] = f"구글 수금관리 업데이트 오류: {type(e).__name__} / {e}"
-        return False
-
-
 def build_billing_rows_from_router_claim_df(claim_df: pd.DataFrame) -> pd.DataFrame:
     if claim_df is None or claim_df.empty:
         return pd.DataFrame(columns=[
