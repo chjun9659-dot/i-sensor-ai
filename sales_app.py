@@ -245,6 +245,12 @@ def get_gsheet_client():
             f"로컬 JSON 없음: {key_path}"
         )
 
+    raise FileNotFoundError(
+        "구글 인증 정보를 찾지 못했습니다. "
+        "배포환경은 st.secrets['gcp_service_account'], "
+        "로컬환경은 service_account.json 이 필요합니다."
+    )
+
     
 def append_to_gsheet(sheet_url, row_data, worksheet_index=0):
     try:
@@ -839,13 +845,20 @@ def add_monthly_billing_data(claim_df: pd.DataFrame):
         rows = values[1:] if len(values) > 1 else []
 
         # 기존 행의 중복키 수집
-        existing_keys = set()
-        for row in rows:
+        existing_row_map = {}
+
+        for idx, row in enumerate(rows, start=2):
             row_기준월 = str(row[0]).strip() if len(row) > 0 else ""
             row_단지명 = str(row[1]).strip() if len(row) > 1 else ""
             row_담당자 = str(row[2]).strip() if len(row) > 2 else ""
+            row_청구금액 = str(row[3]).strip() if len(row) > 3 else ""
+
             key = f"{row_기준월}||{row_단지명}||{row_담당자}"
-            existing_keys.add(key)
+
+            existing_row_map[key] = {
+                "row_index": idx,
+                "amount": row_청구금액
+            }
 
         add_rows = []
         duplicate_count = 0
@@ -878,8 +891,18 @@ def add_monthly_billing_data(claim_df: pd.DataFrame):
 
             key = f"{기준월}||{단지명}||{담당자}"
 
-            if key in existing_keys:
-                duplicate_count += 1
+            if key in existing_row_map:
+                row_info = existing_row_map[key]
+                old_amount = row_info["amount"]
+                row_index = row_info["row_index"]
+
+                # 🔥 핵심: 금액 없으면 업데이트
+                if old_amount in ["", "0"]:
+                    worksheet.update_cell(row_index, 4, 청구금액)  # D열
+                    worksheet.update_cell(row_index, 5, "")        # E열 초기화
+                else:
+                    duplicate_count += 1
+
                 continue
 
             add_rows.append([
