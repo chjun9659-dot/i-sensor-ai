@@ -1420,15 +1420,24 @@ def render_header():
             st.image("logo.png", width=100)
 
     with col2:
-        st.markdown(
-            f"""
-            <div style="padding-top:8px;">
-                <h2 style="margin-bottom:0;">윤우 영업 통합 시스템</h2>
-                <p style="margin-top:4px; color:gray;">현재 사업: <b>{st.session_state.business}</b></p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("""
+        <style>
+        /* metric 숫자 크기 줄이기 */
+        div[data-testid="stMetricValue"] {
+            font-size: 22px !important;
+        }
+
+        /* metric 라벨 */
+        div[data-testid="stMetricLabel"] {
+            font-size: 14px !important;
+        }
+
+        /* 일반 숫자 (h1, h2 등) */
+        h1, h2, h3 {
+            font-size: 22px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
     st.divider()
 
