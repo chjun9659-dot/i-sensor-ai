@@ -15,11 +15,77 @@ st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-USERS = {
-    "admin": {"pw": "1234", "role": "admin", "name": "관리자"},
-    "user1": {"pw": "1234", "role": "user", "name": "영업1"},
-    "user2": {"pw": "1234", "role": "user", "name": "영업2"},
-}
+# =========================================================
+# 사용자관리 구글시트
+# =========================================================
+USER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1uUjrdRwTjdvKoED1dWKsikAOGWNxMR59Eht-SYdRX1w/edit?gid=0#gid=0"
+
+
+def load_users_from_gsheet():
+    """
+    사용자관리 시트 컬럼:
+    아이디 / 비밀번호 / 권한 / 사용여부 / 이름 / 부서 / 직급 / 코드
+    """
+    try:
+        if not USER_SHEET_URL or "여기에_" in USER_SHEET_URL:
+            return {}
+
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", USER_SHEET_URL).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.get_worksheet(0)
+
+        values = worksheet.get_all_values()
+
+        if not values or len(values) < 2:
+            st.error("사용자관리 시트에 데이터가 없습니다.")
+            return {}
+
+        headers = [str(x).strip() for x in values[0]]
+        rows = values[1:]
+
+        df = pd.DataFrame(rows, columns=headers).fillna("")
+        df.columns = [str(c).strip() for c in df.columns]
+
+        required_cols = ["아이디", "비밀번호", "권한", "사용여부", "이름"]
+        for col in required_cols:
+            if col not in df.columns:
+                st.error(f"사용자관리 시트에 '{col}' 컬럼이 없습니다.")
+                return {}
+
+        users = {}
+
+        for _, row in df.iterrows():
+            user_id = str(row.get("아이디", "")).strip()
+            password = str(row.get("비밀번호", "")).strip()
+            role_raw = str(row.get("권한", "")).strip()
+            use_yn = str(row.get("사용여부", "")).strip().upper()
+            name = str(row.get("이름", "")).strip()
+
+            if not user_id:
+                continue
+
+            # 권한 변환
+            if role_raw in ["관리자", "admin", "ADMIN"]:
+                role = "admin"
+            else:
+                role = "user"
+
+            users[user_id] = {
+                "pw": password,
+                "role": role,
+                "name": name,
+                "use_yn": use_yn,
+                "department": str(row.get("부서", "")).strip(),
+                "position": str(row.get("직급", "")).strip(),
+                "code": str(row.get("코드", "")).strip(),
+            }
+
+        return users
+
+    except Exception as e:
+        st.error(f"사용자관리 시트 불러오기 오류: {e}")
+        return {}
 
 # =========================================================
 # 사업별 구글시트 링크
@@ -73,6 +139,15 @@ if "display_name" not in st.session_state:
     st.session_state.display_name = ""
 if "business" not in st.session_state:
     st.session_state.business = "아이센서"
+
+if "department" not in st.session_state:
+    st.session_state.department = ""
+
+if "position" not in st.session_state:
+    st.session_state.position = ""
+
+if "user_code" not in st.session_state:
+    st.session_state.user_code = ""
 
 
 # =========================================================
@@ -997,34 +1072,40 @@ def mark_billing_paid(기준월, 단지명, 담당자, 청구금액):
 # =========================================================
 def login():
     st.title("🔐 윤우 영업 통합 시스템 로그인")
+
     user_id = st.text_input("아이디")
     password = st.text_input("비밀번호", type="password")
 
     if st.button("로그인"):
-        if user_id in USERS and USERS[user_id]["pw"] == password:
-            st.session_state.logged_in = True
-            st.session_state.username = user_id
-            st.session_state.role = USERS[user_id]["role"]
-            st.session_state.display_name = USERS[user_id]["name"]
-            st.rerun()
-        else:
+        users = load_users_from_gsheet()
+
+        if not users:
+            st.error("사용자 정보를 불러오지 못했습니다. 사용자관리 시트를 확인하세요.")
+            return
+
+        if user_id not in users:
             st.error("아이디 또는 비밀번호가 맞지 않습니다.")
+            return
 
+        user = users[user_id]
 
-def logout():
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.session_state.role = ""
-    st.session_state.display_name = ""
-    st.rerun()
+        if str(user.get("use_yn", "")).upper() != "Y":
+            st.error("사용 중지된 계정입니다. 관리자에게 문의하세요.")
+            return
 
+        if user.get("pw") != password:
+            st.error("아이디 또는 비밀번호가 맞지 않습니다.")
+            return
 
-def is_admin():
-    return st.session_state.role == "admin"
+        st.session_state.logged_in = True
+        st.session_state.username = user_id
+        st.session_state.role = user.get("role", "user")
+        st.session_state.display_name = user.get("name", user_id)
+        st.session_state.department = user.get("department", "")
+        st.session_state.position = user.get("position", "")
+        st.session_state.user_code = user.get("code", "")
 
-
-def current_user_name():
-    return st.session_state.display_name or st.session_state.username
+        st.rerun()
 
 
 # =========================================================
@@ -2373,6 +2454,26 @@ def page_router_management():
     st.divider()
     st.info("※ 현재 화면은 계약단지 구글시트의 라우터 컬럼을 읽어서 보여주는 관리 화면입니다. 값 수정은 원본 구글시트에서 진행해 주세요.")
 
+def is_admin():
+    return st.session_state.role == "admin"
+
+
+def is_admin():
+    return st.session_state.role == "admin"
+
+def current_user_name():
+    return st.session_state.display_name or st.session_state.username
+
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.role = ""
+    st.session_state.display_name = ""
+    st.session_state.department = ""
+    st.session_state.position = ""
+    st.session_state.user_code = ""
+    st.rerun()
+
 # =========================================================
 # 메인
 # =========================================================
@@ -2383,6 +2484,15 @@ def main():
     st.sidebar.write(f"로그인: {st.session_state.username}")
     st.sidebar.write(f"이름: {current_user_name()}")
     st.sidebar.write(f"권한: {'관리자' if is_admin() else '담당자'}")
+
+    if st.session_state.get("department"):
+        st.sidebar.write(f"부서: {st.session_state.department}")
+
+    if st.session_state.get("position"):
+        st.sidebar.write(f"직급: {st.session_state.position}")
+
+    if st.session_state.get("user_code"):
+        st.sidebar.write(f"코드: {st.session_state.user_code}")
 
     selected_business = st.sidebar.selectbox("사업 선택", list(BUSINESS_CONFIG.keys()))
     st.session_state.business = selected_business
