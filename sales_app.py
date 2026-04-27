@@ -5,7 +5,65 @@ from datetime import datetime, date, timedelta
 
 import pandas as pd
 import streamlit as st
+# 👇 여기 추가 (이 위치가 핵심)
+def render_common_style():
+    st.markdown("""
+    <style>
+    .yw-card {
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 14px 16px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        border-left: 5px solid transparent;
+        min-height: 80px;
+        margin-bottom: 8px;
+        transition: all 0.2s ease;  /* 👈 여기 */
+    }
 
+    .yw-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+    }
+
+    /* 컬러 라인 */
+    .yw-card.success { border-left-color: #16a34a; }
+    .yw-card.warning { border-left-color: #f59e0b; }
+    .yw-card.danger  { border-left-color: #ef4444; }
+    .yw-card.info    { border-left-color: #2563eb; }
+
+    /* 제목 */
+    .card-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #64748b;
+        margin-bottom: 3px;
+    }
+
+    /* 숫자 */
+    .card-value {
+        font-size: 24px;
+        font-weight: 800;
+        color: #0f172a;
+        line-height: 1.2;
+    }
+
+    /* 설명 */
+    .card-sub {
+        font-size: 11px;
+        color: #94a3b8;
+        margin-top: 3px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+def ui_card(title, value, sub="", status=""):
+    st.markdown(f"""
+    <div class="yw-card {status}">
+        <div class="card-title">{title}</div>
+        <div class="card-value">{value}</div>
+        <div class="card-sub">{sub}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
 
@@ -2085,32 +2143,12 @@ def save_schedule_log(action, site="", manager="", note=""):
 
 def schedule_page():
     render_inspection_common_style()
+    render_common_style()
 
     st.markdown('<div class="erp-page-title">시공 일정 관리 프로그램</div>', unsafe_allow_html=True)
     st.markdown('<div class="erp-page-desc">시공 일정 등록, 수정, 진행 현황 관리</div>', unsafe_allow_html=True)
 
-    st.markdown("""
-    <style>
-    div[data-testid="stMetricValue"] {
-        font-size: 22px !important;
-        font-weight: 700 !important;
-    }
 
-    div[data-testid="stMetricLabel"] {
-        font-size: 12px !important;
-        color: #64748b !important;
-    }
-
-    div[data-testid="stMetric"] {
-    background: #ffffff;  /* 더 선명 */
-    padding: 15px;
-    border-radius: 12px;
-    border: 1.5px solid #cbd5e1;  /* 더 진하게 */
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08);  /* 그림자 강화 */
-}         
-
-    </style>
-    """, unsafe_allow_html=True)
     def style_schedule_status(val):
         s = str(val).strip()
 
@@ -2179,11 +2217,21 @@ def schedule_page():
     total_qty = int(df["수량"].sum()) if not df.empty else 0
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("전체 일정", total_count)
-    c2.metric("오늘 일정", today_count)
-    c3.metric("진행중", progress_count)
-    c4.metric("완료", done_count)
-    c5.metric("총 수량", total_qty)
+
+    with c1:
+        ui_card("전체 일정", total_count)
+
+    with c2:
+        ui_card("오늘 일정", today_count)
+
+    with c3:
+        ui_card("진행중", progress_count)
+
+    with c4:
+        ui_card("완료", done_count)
+
+    with c5:
+        ui_card("총 수량", total_qty)
 
     st.divider()
 
@@ -3409,24 +3457,6 @@ def render_inspection_common_style():
     </style>
     """, unsafe_allow_html=True)
 
-def dashboard_page():
-    if st.session_state.menu != "통계 대시보드":
-        return
-
-    st.markdown("""
-    <style>
-    div[data-testid="stMetricValue"] {
-        font-size: 24px !important;
-    }
-    div[data-testid="stMetricLabel"] {
-        font-size: 14px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("## 📈 통계 대시보드")
-    st.write("실사 / 시공 / 연차 데이터를 한 화면에서 확인합니다.")
-
 # =========================
 # 실사관리 페이지
 # =========================
@@ -3444,6 +3474,10 @@ def inspection_page():
 
     df = load_inspection_data()
     df = normalize_inspection_df(df)
+
+    # ✅ 사업 선택에 따라 실사 데이터 분리
+    df = apply_product_filter(df)
+
     df = df.reset_index(drop=True)
     df["row_id"] = df.index
 
@@ -3541,7 +3575,7 @@ def inspection_page():
             request_content = st.text_area("요청내용", key=f"request_content_{form_ver}")
             note = st.text_input("비고", key=f"note_{form_ver}")
 
-            st.markdown("#### 첨부파일")
+            st.subheader("첨부파일")
             uploaded_file = st.file_uploader(
                 "실사 관련 파일 업로드",
                 type=["pdf", "png", "jpg", "jpeg", "xlsx", "xls", "doc", "docx"],
@@ -4230,7 +4264,7 @@ def inspection_page():
                     edit_request = st.text_area("요청내용 수정", value=str(view_row["요청내용"]))
                     edit_note = st.text_input("비고 수정", value=str(view_row["비고"]))
 
-                    st.markdown("#### 첨부파일 수정")
+                    st.subheader("첨부파일 수정")
                     edit_uploaded_file = st.file_uploader(
                         "새 첨부파일 업로드",
                         type=["pdf", "png", "jpg", "jpeg", "xlsx", "xls", "doc", "docx"],
@@ -4997,7 +5031,7 @@ def maintenance_page():
             v1, v2 = st.columns(2)
 
             with v1:
-                st.markdown("#### 기본 정보")
+                st.subheader("기본 정보")
                 st.write(f"**코드번호**: {row['코드번호']}")
                 st.write(f"**단지명**: {row['단지명']}")
                 st.write(f"**연락처**: {row['연락처']}")
@@ -5008,7 +5042,7 @@ def maintenance_page():
                 st.write(f"**총계약금액**: {format_currency(row['총계약금액'])} 원")
 
             with v2:
-                st.markdown("#### 계약 정보")
+                st.subheader("계약 정보")
                 st.write(f"**계약시작일**: {row['계약시작일']}")
                 st.write(f"**계약종료일**: {row['계약종료일']}")
                 st.write(f"**계약상태**: {row['계약상태']}")
@@ -5020,7 +5054,7 @@ def maintenance_page():
                 else:
                     st.caption("첨부파일 없음")
 
-            st.markdown("#### 월별 수금 이력")
+            st.subheader("월별 수금 이력")
             history_df = pay_df[pay_df["코드번호"].astype(str) == str(row["코드번호"]).strip()].copy()
 
             if history_df.empty:
@@ -5290,6 +5324,8 @@ def generate_monthly_claim_rows(contract_df, payment_df, target_year, target_mon
 # 페이지들
 # =========================================================
 def page_dashboard():
+    render_inspection_common_style()
+    render_common_style()
     st.title("📊 통합 대시보드")
     st.caption("영업 / 계약 / 시공 / 실사 / 유지보수 / 연차 / 오늘 할 일을 한 화면에서 확인합니다.")
 
@@ -5319,11 +5355,20 @@ def page_dashboard():
 
     k1, k2, k3, k4, k5 = st.columns(5)
 
-    k1.metric("영업현황", len(sales_df) if not sales_df.empty else 0)
-    k2.metric("계약/접수", len(contract_df) if not contract_df.empty else 0)
-    k3.metric("가능단지", len(possible_df) if not possible_df.empty else 0)
-    k4.metric("입찰공고", len(bid_df) if not bid_df.empty else 0)
-    k5.metric("오늘 할 일", len(task_df) if not task_df.empty else 0)
+    with k1:
+        ui_card("영업현황", len(sales_df) if not sales_df.empty else 0, "전체 영업 데이터", "info")
+
+    with k2:
+        ui_card("계약/접수", len(contract_df) if not contract_df.empty else 0, "계약·접수 현황", "success")
+
+    with k3:
+        ui_card("가능단지", len(possible_df) if not possible_df.empty else 0, "가능 단지 수", "info")
+
+    with k4:
+        ui_card("입찰공고", len(bid_df) if not bid_df.empty else 0, "입찰 공고 수", "warning")
+
+    with k5:
+        ui_card("오늘 할 일", len(task_df) if not task_df.empty else 0, "등록된 할 일", "danger")
 
     st.divider()
 
@@ -5343,10 +5388,19 @@ def page_dashboard():
 
         if construction_df.empty:
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("전체 일정", 0)
-            c2.metric("오늘 일정", 0)
-            c3.metric("진행중", 0)
-            c4.metric("완료", 0)
+
+            with c1:
+                ui_card("전체 일정", 0, "전체 시공 일정")
+
+            with c2:
+                ui_card("오늘 일정", 0, "오늘 시공 예정",)
+
+            with c3:
+                ui_card("진행중", 0, "미완료 일정",)
+
+            with c4:
+                ui_card("완료", 0, "완료된 일정",)
+
             st.info("등록된 시공 일정이 없습니다.")
 
         else:
@@ -5355,13 +5409,28 @@ def page_dashboard():
             done_construction = construction_df[construction_df["상태"].astype(str) == "완료"]
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("전체 일정", len(construction_df))
-            c2.metric("오늘 일정", len(today_construction))
-            c3.metric("진행중", len(progress_construction))
-            c4.metric("완료", len(done_construction))
+
+            with c1:
+                ui_card("전체 일정", len(construction_df), "전체 시공 일정")
+
+            with c2:
+                ui_card("오늘 일정", len(today_construction), "오늘 시공 예정")
+
+            with c3:
+                ui_card("진행중", len(progress_construction), "미완료 일정")
+
+            with c4:
+                ui_card("완료", len(done_construction), "완료된 일정")
+
+            # st.info(
+            #     f"시공 현황: 전체 {total_count}건 / "
+            #     f"오늘 {today_count}건 / "
+            #     f"진행중 {progress_count}건 / "
+            #     f"완료 {done_count}건"
+            # )
 
             if not today_construction.empty:
-                st.markdown("#### 📅 오늘 시공 일정")
+                st.subheader("📅 오늘 시공 일정")
                 st.dataframe(
                     today_construction[["날짜","상품구분", "설치현장", "시공담당", "수량", "비고", "상태"]],
                     use_container_width=True,
@@ -5388,12 +5457,24 @@ def page_dashboard():
 
         if inspection_df.empty:
             i1, i2, i3, i4, i5 = st.columns(5)
-            i1.metric("전체 요청", 0)
-            i2.metric("요청접수", 0)
-            i3.metric("진행중", 0)
-            i4.metric("실사완료", 0)
-            i5.metric("계약완료", 0)
+
+            with i1:
+                ui_card("전체 요청", 0,"전체 실사 요청",)
+
+            with i2:
+                ui_card("요청접수", 0,"신규 요청",)
+
+            with i3:
+                ui_card("진행중", 0,"배정/일정/진행",)
+
+            with i4:
+                ui_card("실사완료", 0,"완료된 실사",)
+
+            with i5:
+                ui_card("계약완료", 0,"계약 전환",)
+
             st.info("등록된 실사 요청이 없습니다.")
+
         else:
             pending_count = len(inspection_df[inspection_df["진행상태"] == "요청접수"])
             working_count = len(inspection_df[inspection_df["진행상태"].isin(["담당자배정", "일정확정", "실사진행"])])
@@ -5401,14 +5482,31 @@ def page_dashboard():
             contract_done_count = len(inspection_df[inspection_df["계약여부"] == "계약"])
 
             i1, i2, i3, i4, i5 = st.columns(5)
-            i1.metric("전체 요청", len(inspection_df))
-            i2.metric("요청접수", pending_count)
-            i3.metric("진행중", working_count)
-            i4.metric("실사완료", done_count)
-            i5.metric("계약완료", contract_done_count)
+
+            with i1:
+                ui_card("전체 요청", len(inspection_df),"전체 실사 요청")
+
+            with i2:
+                ui_card("요청접수", pending_count,"신규 요청")
+
+            with i3:
+                ui_card("진행중", working_count,"배정/일정/진행")
+
+            with i4:
+                ui_card("실사완료", done_count,"완료된 실사")
+
+            with i5:
+                ui_card("계약완료", contract_done_count,"계약 전환")
+
+            # st.info(
+            #     f"실사 현황: 전체 {len(inspection_df)}건 / "
+            #     f"요청 {pending_count}건 / "
+            #     f"진행중 {working_count}건 / "
+            #     f"완료 {done_count}건"
+            # )
 
             recent_insp = inspection_df.tail(10).copy()
-            st.markdown("#### 최근 실사 요청")
+            st.subheader("최근 실사 요청")
             st.dataframe(
                 recent_insp[[
                     "요청일", "현장명", "상품구분", "영업담당자",
@@ -5458,7 +5556,7 @@ def page_dashboard():
                 st.warning(f"현재 유지보수 미수금이 {total_unpaid:,}원 있습니다.")
 
             if not unpaid_df.empty:
-                st.markdown("#### 💰 미입금 현황")
+                st.subheader("💰 미입금 현황")
                 show_unpaid = unpaid_df[[
                     "기준년월", "코드번호", "단지명", "청구금액",
                     "입금여부", "미수금", "영업담당자"
@@ -5474,40 +5572,41 @@ def page_dashboard():
     # =========================
     # 6. 연차 요약
     # =========================
-    st.subheader("👥 연차 요약")
+    if st.session_state.get("business") == "아이센서":
 
-    try:
-        vacation_df = load_df("연차관리")
+        st.subheader("👥 연차 요약")
 
-        if vacation_df.empty:
-            v1, v2, v3 = st.columns(3)
-            v1.metric("직원 수", 0)
-            v2.metric("잔여 5일 이하", 0)
-            v3.metric("잔여 0일 이하", 0)
-            st.info("연차 데이터가 없습니다.")
-        else:
-            for col in ["발생 연차", "사용 연차", "잔여 연차"]:
-                if col in vacation_df.columns:
-                    vacation_df[col] = pd.to_numeric(vacation_df[col], errors="coerce").fillna(0)
+        try:
+            vacation_df = load_df("연차관리")
 
-            low_leave_df = vacation_df[vacation_df["잔여 연차"] <= 5].copy() if "잔여 연차" in vacation_df.columns else pd.DataFrame()
-            zero_leave_df = vacation_df[vacation_df["잔여 연차"] <= 0].copy() if "잔여 연차" in vacation_df.columns else pd.DataFrame()
+            if vacation_df.empty:
+                v1, v2, v3 = st.columns(3)
+                v1.metric("직원 수", 0)
+                v2.metric("잔여 5일 이하", 0)
+                v3.metric("잔여 0일 이하", 0)
+                st.info("연차 데이터가 없습니다.")
+            else:
+                for col in ["발생 연차", "사용 연차", "잔여 연차"]:
+                    if col in vacation_df.columns:
+                        vacation_df[col] = pd.to_numeric(vacation_df[col], errors="coerce").fillna(0)
 
-            v1, v2, v3 = st.columns(3)
-            v1.metric("직원 수", len(vacation_df))
-            v2.metric("잔여 5일 이하", len(low_leave_df))
-            v3.metric("잔여 0일 이하", len(zero_leave_df))
+                low_leave_df = vacation_df[vacation_df["잔여 연차"] <= 5].copy() if "잔여 연차" in vacation_df.columns else pd.DataFrame()
+                zero_leave_df = vacation_df[vacation_df["잔여 연차"] <= 0].copy() if "잔여 연차" in vacation_df.columns else pd.DataFrame()
 
-            if is_admin() and not low_leave_df.empty:
-                st.markdown("#### ⚠️ 잔여 연차 주의 직원")
-                st.dataframe(
-                    low_leave_df[["이름", "발생 연차", "사용 연차", "잔여 연차"]],
-                    use_container_width=True,
-                    hide_index=True
-                )
+                v1, v2, v3 = st.columns(3)
+                v1.metric("직원 수", len(vacation_df))
+                v2.metric("잔여 5일 이하", len(low_leave_df))
+                v3.metric("잔여 0일 이하", len(zero_leave_df))
 
-    except Exception as e:
-        st.warning(f"연차 요약을 불러오지 못했습니다: {e}")
+                st.subheader("📊 연차 사용 현황 그래프")
+
+                leave_chart_df = vacation_df[["이름", "사용 연차", "잔여 연차"]].copy()
+                leave_chart_df = leave_chart_df.set_index("이름")
+
+                st.bar_chart(leave_chart_df)
+
+        except Exception as e:
+            st.warning(f"연차 요약을 불러오지 못했습니다: {e}")
 
     st.divider()
 
@@ -5519,7 +5618,7 @@ def page_dashboard():
     t1, t2 = st.columns(2)
 
     with t1:
-        st.markdown("#### 오늘 할 일")
+        st.subheader("오늘 할 일")
 
         if task_df.empty:
             st.info("등록된 할 일이 없습니다.")
@@ -5531,7 +5630,7 @@ def page_dashboard():
             )
 
     with t2:
-        st.markdown("#### 일정 관리")
+        st.subheader("일정 관리")
 
         if schedule_common_df.empty:
             st.info("등록된 일정이 없습니다.")
@@ -6493,6 +6592,11 @@ def main():
 
     if st.sidebar.button("로그아웃"):
         logout()
+
+    if st.sidebar.button("🏠 홈 ", use_container_width=True):
+        st.session_state["sidebar_menu_group"] = "📊 통합"
+        st.session_state["sidebar_menu_item"] = "대시보드"
+        st.rerun()
 
     render_header()
 
