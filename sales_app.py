@@ -2635,8 +2635,11 @@ def vacation_page():
                         new_used = float(current_used) + float(leave_amount)
                         new_remain = float(current_total) - new_used
 
-                        df.loc[idx, "사용 연차"] = new_used
-                        df.loc[idx, "잔여 연차"] = new_remain
+                        used_col_pos = list(df.columns).index("사용 연차")
+                        remain_col_pos = list(df.columns).index("잔여 연차")
+
+                        df.iat[row_pos, used_col_pos] = float(new_used)
+                        df.iat[row_pos, remain_col_pos] = float(new_remain)
 
                         save_vacation_data(df)
                         st.cache_data.clear()
