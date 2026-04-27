@@ -2638,8 +2638,8 @@ def vacation_page():
                         used_col_pos = list(df.columns).index("사용 연차")
                         remain_col_pos = list(df.columns).index("잔여 연차")
 
-                        df.iat[row_pos, used_col_pos] = float(new_used)
-                        df.iat[row_pos, remain_col_pos] = float(new_remain)
+                        df.iat[row_pos, used_col_pos] = format_leave_number(new_used)
+                        df.iat[row_pos, remain_col_pos] = format_leave_number(new_remain)
 
                         save_vacation_data(df)
                         st.cache_data.clear()
