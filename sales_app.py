@@ -2680,19 +2680,38 @@ def vacation_page():
 
     if is_admin:
         if st.button("🔄 선택 직원 연차 다시 계산", use_container_width=True, key="vac_recalc_selected_btn"):
-            idx = df[df["이름"] == selected_name].index[0]
 
-            total_leave = to_number(df.loc[idx, "발생 연차"])
+            # ✅ 선택 직원의 실제 행 위치를 숫자로 찾기
+            match_positions = [
+                i for i, name in enumerate(df["이름"].astype(str).str.strip().tolist())
+                if name == str(selected_name).strip()
+            ]
+
+            if not match_positions:
+                st.error("선택한 직원을 찾지 못했습니다.")
+                st.stop()
+
+            row_pos = match_positions[0]
+
+            # ✅ 컬럼 위치를 숫자로 찾기
+            used_col_pos = list(df.columns).index("사용 연차")
+            remain_col_pos = list(df.columns).index("잔여 연차")
+            total_col_pos = list(df.columns).index("발생 연차")
+            start_col_pos = list(df.columns).index("기산시작일")
+            end_col_pos = list(df.columns).index("기산종료일")
+
+            total_leave = to_number(df.iloc[row_pos, total_col_pos])
             used_leave = 0.0
 
-            start_date = pd.to_datetime(df.loc[idx, "기산시작일"], errors="coerce")
-            end_date = pd.to_datetime(df.loc[idx, "기산종료일"], errors="coerce")
+            start_date = pd.to_datetime(df.iloc[row_pos, start_col_pos], errors="coerce")
+            end_date = pd.to_datetime(df.iloc[row_pos, end_col_pos], errors="coerce")
 
             for col in USE_COLS:
                 if col not in df.columns:
                     continue
 
-                value = df.loc[idx, col]
+                col_pos = list(df.columns).index(col)
+                value = df.iloc[row_pos, col_pos]
 
                 if pd.isna(value):
                     continue
@@ -2714,13 +2733,8 @@ def vacation_page():
 
             remain_leave = total_leave - used_leave
 
-            row_pos = df.index.get_loc(idx)
-
-            used_col_pos = list(df.columns).index("사용 연차")
-            remain_col_pos = list(df.columns).index("잔여 연차")
-
-            df.iat[row_pos, used_col_pos] = used_leave
-            df.iat[row_pos, remain_col_pos] = remain_leave
+            df.iloc[row_pos, used_col_pos] = float(used_leave)
+            df.iloc[row_pos, remain_col_pos] = float(remain_leave)
 
             save_vacation_data(df)
             st.cache_data.clear()
