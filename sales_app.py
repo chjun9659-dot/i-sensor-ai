@@ -2948,9 +2948,12 @@ def vacation_page():
                     new_used = max(0, current_used - cancel_amount)
                     new_remain = current_total - new_used
 
+                    # ✅ 배포앱 pandas 타입 안전 처리
+                    df = df.astype(object)
+
                     df.loc[idx, selected_col] = ""
-                    df.loc[idx, "사용 연차"] = float(new_used)
-                    df.loc[idx, "잔여 연차"] = float(new_remain)
+                    df.loc[idx, "사용 연차"] = format_leave_number(new_used)
+                    df.loc[idx, "잔여 연차"] = format_leave_number(new_remain)
 
                     save_vacation_data(df)
 
