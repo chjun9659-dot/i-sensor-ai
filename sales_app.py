@@ -2733,13 +2733,12 @@ def vacation_page():
 
             remain_leave = total_leave - used_leave
 
-            # ✅ 배포앱 대응: 연차 숫자 컬럼을 float 타입으로 강제 변환
-            df.iloc[:, used_col_pos] = pd.to_numeric(df.iloc[:, used_col_pos], errors="coerce").fillna(0).astype(float)
-            df.iloc[:, remain_col_pos] = pd.to_numeric(df.iloc[:, remain_col_pos], errors="coerce").fillna(0).astype(float)
+            # ✅ 배포앱 안전 처리: df 전체를 object 타입으로 변경
+            df = df.astype(object)
 
             # ✅ 선택 직원 값 저장
-            df.iloc[row_pos, used_col_pos] = float(used_leave)
-            df.iloc[row_pos, remain_col_pos] = float(remain_leave)
+            df.iloc[row_pos, used_col_pos] = format_leave_number(used_leave)
+            df.iloc[row_pos, remain_col_pos] = format_leave_number(remain_leave)
 
             save_vacation_data(df)
             st.cache_data.clear()
