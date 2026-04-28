@@ -2714,8 +2714,13 @@ def vacation_page():
 
             remain_leave = total_leave - used_leave
 
-            df.loc[idx, "사용 연차"] = used_leave
-            df.loc[idx, "잔여 연차"] = remain_leave
+            row_pos = df.index.get_loc(idx)
+
+            used_col_pos = list(df.columns).index("사용 연차")
+            remain_col_pos = list(df.columns).index("잔여 연차")
+
+            df.iat[row_pos, used_col_pos] = used_leave
+            df.iat[row_pos, remain_col_pos] = remain_leave
 
             save_vacation_data(df)
             st.cache_data.clear()
