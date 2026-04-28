@@ -1792,8 +1792,8 @@ def recalculate_vacation_summary(df: pd.DataFrame):
 
         remain_leave = total_leave - used_leave
 
-        df.loc[idx, "사용 연차"] = used_leave
-        df.loc[idx, "잔여 연차"] = remain_leave
+        df.loc[idx, "사용 연차"] = format_leave_number(used_leave)
+        df.loc[idx, "잔여 연차"] = format_leave_number(remain_leave)
 
     return df
 
@@ -2948,11 +2948,11 @@ def vacation_page():
                     new_used = max(0, current_used - cancel_amount)
                     new_remain = current_total - new_used
 
-                    # ✅ 타입 안전 처리
                     df = df.astype(object)
 
-                    df.loc[idx, "사용 연차"] = format_leave_number(used_leave)
-                    df.loc[idx, "잔여 연차"] = format_leave_number(remain_leave)
+                    df.loc[idx, selected_col] = ""
+                    df.loc[idx, "사용 연차"] = format_leave_number(new_used)
+                    df.loc[idx, "잔여 연차"] = format_leave_number(new_remain)
 
                     save_vacation_data(df)
 
