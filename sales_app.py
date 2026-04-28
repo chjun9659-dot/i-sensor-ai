@@ -3518,14 +3518,68 @@ def vehicle_page():
             elif remain_days <= 30:
                 insurance_warning_count += 1
 
+    st.markdown("""
+    <style>
+    .vehicle-card {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 18px 22px;
+        border: 1px solid #eef2f7;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        transition: all 0.22s ease;
+        min-height: 105px;
+    }
+    .vehicle-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+    }
+    .vehicle-card-label {
+        font-size: 13x;
+        color: #64748b;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+    .vehicle-card-value {
+        font-size: 22px;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    def vehicle_card(title, value, sub=""):
+        st.markdown(f"""
+        <div class="vehicle-card">
+            <div class="vehicle-card-label">{title}</div>
+            <div class="vehicle-card-value">{value}</div>
+            <div class="vehicle-card-sub">{sub}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-    col1.metric("전체 차량", total_vehicle)
-    col2.metric("운행 차량", active_vehicle)
-    col3.metric("매각 차량", sold_vehicle)
-    col4.metric("보험금 합계", f"{total_insurance:,}원")
-    col5.metric("정비비 합계", f"{total_repair:,}원")
-    col6.metric("보험 만료임박", insurance_warning_count)
-    col7.metric("보험 만료", insurance_expired_count)
+
+    with col1:
+        vehicle_card("전체 차량", total_vehicle, "등록 차량")
+
+    with col2:
+        vehicle_card("운행 차량", active_vehicle, "현재 운행")
+
+    with col3:
+        vehicle_card("매각 차량", sold_vehicle, "매각 처리")
+
+    with col4:
+        vehicle_card("보험금 합계", f"{total_insurance:,}원", "전체 보험료")
+
+    with col5:
+        vehicle_card("정비비 합계", f"{total_repair:,}원", "누적 정비비")
+
+    with col6:
+        vehicle_card("보험 만료임박", insurance_warning_count, "30일 이내")
+
+    with col7:
+        vehicle_card("보험 만료", insurance_expired_count, "기간 경과")
 
     if insurance_expired_count > 0:
         st.error(f"🚨 보험이 만료된 차량이 {insurance_expired_count}대 있습니다.")
