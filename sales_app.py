@@ -2682,11 +2682,40 @@ def vacation_page():
         if st.button("🔄 선택 직원 연차 다시 계산", use_container_width=True, key="vac_recalc_selected_btn"):
             idx = df[df["이름"] == selected_name].index[0]
 
-            target_one = df.loc[[idx]].copy()
-            target_one = recalculate_vacation_summary(target_one)
+            total_leave = to_number(df.loc[idx, "발생 연차"])
+            used_leave = 0.0
 
-            df.loc[idx, "사용 연차"] = target_one.iloc[0]["사용 연차"]
-            df.loc[idx, "잔여 연차"] = target_one.iloc[0]["잔여 연차"]
+            start_date = pd.to_datetime(df.loc[idx, "기산시작일"], errors="coerce")
+            end_date = pd.to_datetime(df.loc[idx, "기산종료일"], errors="coerce")
+
+            for col in USE_COLS:
+                if col not in df.columns:
+                    continue
+
+                value = df.loc[idx, col]
+
+                if pd.isna(value):
+                    continue
+
+                text = str(value).strip()
+                if text == "" or text.lower() == "none":
+                    continue
+
+                parsed_date, amount = parse_use_entry(value)
+
+                if parsed_date is None:
+                    continue
+
+                if pd.notna(start_date) and pd.notna(end_date):
+                    if start_date.date() <= parsed_date.date() <= end_date.date():
+                        used_leave += amount
+                else:
+                    used_leave += amount
+
+            remain_leave = total_leave - used_leave
+
+            df.loc[idx, "사용 연차"] = used_leave
+            df.loc[idx, "잔여 연차"] = remain_leave
 
             save_vacation_data(df)
             st.cache_data.clear()
