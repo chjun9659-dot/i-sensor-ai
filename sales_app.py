@@ -3378,6 +3378,382 @@ def normalize_inspection_df(df):
 
     return df
 
+# =========================================================
+# 차량관리
+# =========================================================
+
+VEHICLE_SHEET_NAME = "차량관리"
+VEHICLE_REPAIR_SHEET_NAME = "차량정비이력"
+
+VEHICLE_COLUMNS = [
+    "차량명", "소유자", "소유형태", "유종", "차종", "모델명", "연식", "차량번호",
+    "보험회사", "보험종류", "보험기간", "보험금액", "차량상태", "비고"
+]
+
+REPAIR_COLUMNS = [
+    "차량번호", "수리일자", "수리내역", "금액", "비고"
+]
+VEHICLE_SPREADSHEET_ID = "1OBE54H30v_bQ1hxI7VMShtELMiIxdAUKnCXcpzwSlQQ"
+
+def get_vehicle_spreadsheet():
+    client = get_gsheet_client()
+    return client.open_by_key(VEHICLE_SPREADSHEET_ID)
+
+@st.cache_data(ttl=300)
+def load_sheet_as_df(sheet_name, columns):
+    try:
+        sh = get_vehicle_spreadsheet() 
+        ws = sh.worksheet(sheet_name)
+        data = ws.get_all_records()
+
+        df = pd.DataFrame(data)
+
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ""
+
+        df = df[columns].copy()
+
+        # None / NaN / nan 문자 방어
+        df = df.where(pd.notnull(df), "")
+        df = df.replace(["None", "none", "nan", "NaN", "NaT"], "")
+
+        df = df.astype(str)
+
+        return df
+
+    except Exception as e:
+        st.error(f"{sheet_name} 데이터를 불러오는 중 오류가 발생했습니다: {e}")
+        return pd.DataFrame(columns=columns)
+
+
+def save_df_to_sheet(sheet_name, df, columns):
+    try:
+        sh = get_vehicle_spreadsheet()
+        ws = sh.worksheet(sheet_name)
+
+        save_df = df.copy()
+
+        for col in columns:
+            if col not in save_df.columns:
+                save_df[col] = ""
+
+        save_df = save_df[columns].fillna("").astype(str)
+
+        ws.clear()
+        ws.update([columns] + save_df.values.tolist())
+
+        return True
+
+    except Exception as e:
+        st.error(f"{sheet_name} 저장 중 오류가 발생했습니다: {e}")
+        return False
+
+
+def parse_money(value):
+    try:
+        if pd.isna(value):
+            return 0
+        text = str(value).replace(",", "").replace("₩", "").replace("￦", "").strip()
+        if text == "":
+            return 0
+        return int(float(text))
+    except:
+        return 0
+
+
+def parse_insurance_end_date(value):
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+
+        if "~" in text:
+            text = text.split("~")[-1].strip()
+
+        text = text.replace(".", "-").replace("/", "-")
+        dt = pd.to_datetime(text, errors="coerce")
+
+        if pd.isna(dt):
+            return None
+
+        return dt.date()
+
+    except:
+        return None
+
+
+def vehicle_page():
+    st.title("🚗 차량관리")
+
+    vehicle_df = load_sheet_as_df("차량관리", VEHICLE_COLUMNS)
+    repair_df = load_sheet_as_df("차량정비이력", REPAIR_COLUMNS)
+
+    # 숫자 계산용
+    vehicle_temp = vehicle_df.copy()
+    repair_temp = repair_df.copy()
+
+    vehicle_temp["보험금액_숫자"] = vehicle_temp["보험금액"].apply(parse_money)
+    repair_temp["금액_숫자"] = repair_temp["금액"].apply(parse_money)
+
+    total_vehicle = len(vehicle_df)
+    active_vehicle = len(vehicle_df[vehicle_df["차량상태"].astype(str).str.strip() != "매각"])
+    sold_vehicle = len(vehicle_df[vehicle_df["차량상태"].astype(str).str.strip() == "매각"])
+    total_insurance = int(vehicle_temp["보험금액_숫자"].sum())
+    total_repair = int(repair_temp["금액_숫자"].sum())
+
+    # 보험 만료 30일 이내 차량 수
+    today = date.today()
+    insurance_warning_count = 0
+    insurance_expired_count = 0
+
+    for _, row in vehicle_df.iterrows():
+        end_date = parse_insurance_end_date(row.get("보험기간", ""))
+
+        if end_date:
+            remain_days = (end_date - today).days
+
+            if remain_days < 0:
+                insurance_expired_count += 1
+            elif remain_days <= 30:
+                insurance_warning_count += 1
+
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+    col1.metric("전체 차량", total_vehicle)
+    col2.metric("운행 차량", active_vehicle)
+    col3.metric("매각 차량", sold_vehicle)
+    col4.metric("보험금 합계", f"{total_insurance:,}원")
+    col5.metric("정비비 합계", f"{total_repair:,}원")
+    col6.metric("보험 만료임박", insurance_warning_count)
+    col7.metric("보험 만료", insurance_expired_count)
+
+    if insurance_expired_count > 0:
+        st.error(f"🚨 보험이 만료된 차량이 {insurance_expired_count}대 있습니다.")
+
+    if insurance_warning_count > 0:
+        st.warning(f"⚠️ 30일 이내 보험 만료 예정 차량이 {insurance_warning_count}대 있습니다.")
+
+    st.divider()
+
+    tab1, tab2, tab3 = st.tabs(["차량 목록", "정비 이력", "보험 만료 경고"])
+
+    # =====================================================
+    # 1. 차량 목록
+    # =====================================================
+    with tab1:
+        st.subheader("차량 목록")
+
+        edited_vehicle_df = st.data_editor(
+            vehicle_df,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="dynamic",
+            key="vehicle_editor_main_v3",
+        )
+
+        if st.button("💾 차량관리 저장", use_container_width=True):
+            if save_df_to_sheet(VEHICLE_SHEET_NAME, edited_vehicle_df, VEHICLE_COLUMNS):
+                st.cache_data.clear()
+                st.success("차량관리 저장 완료!")
+                st.rerun()
+
+    # =====================================================
+    # 2. 정비 이력
+    # =====================================================
+    with tab2:
+        st.subheader("정비 이력")
+
+        vehicle_numbers = (
+            vehicle_df["차량번호"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", pd.NA)
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        with st.expander("➕ 정비이력 등록", expanded=False):
+
+            with st.form("repair_add_form"):
+                r1, r2, r3 = st.columns(3)
+
+                add_vehicle_no = r1.selectbox(
+                    "차량번호",
+                    vehicle_numbers,
+                    key="repair_add_vehicle_no"
+                )
+
+                add_repair_date = r2.date_input(
+                    "수리일자",
+                    value=date.today(),
+                    key="repair_add_date"
+                )
+
+                add_amount = r3.text_input(
+                    "금액",
+                    placeholder="예: 120000 또는 무상교체",
+                    key="repair_add_amount"
+                )
+
+                add_repair_content = st.text_input("수리내역")
+                add_note = st.text_input("비고")
+
+                submitted = st.form_submit_button("정비이력 등록")
+
+                # ✅ 반드시 여기 안에!
+                if submitted:
+                    new_row = pd.DataFrame([{
+                        "차량번호": str(add_vehicle_no).strip(),
+                        "수리일자": str(add_repair_date),
+                        "수리내역": add_repair_content,
+                        "금액": add_amount,
+                        "비고": add_note
+                    }])
+
+                    save_df = pd.concat([repair_df, new_row], ignore_index=True)
+
+                    if save_df_to_sheet(VEHICLE_REPAIR_SHEET_NAME, save_df, REPAIR_COLUMNS):
+                        st.cache_data.clear()
+                        st.success("정비이력 등록 완료!")
+                        st.rerun()
+
+        selected_vehicle = st.selectbox(
+            "차량번호 선택",
+            ["전체"] + vehicle_numbers
+        )
+
+        view_repair_df = repair_df.copy()
+
+        if selected_vehicle != "전체":
+            view_repair_df = view_repair_df[
+                view_repair_df["차량번호"].astype(str).str.strip() == selected_vehicle
+            ]
+
+        with st.expander("📋 정비이력 조회", expanded=False):
+
+            edited_repair_df = st.data_editor(
+                view_repair_df,
+                use_container_width=True,
+                hide_index=True,
+                num_rows="dynamic",
+                key="repair_editor_main_v4"
+            )
+
+            if selected_vehicle != "전체":
+                st.warning("특정 차량 조회 중에는 전체 정비이력 저장이 비활성화됩니다.")
+            else:
+                if st.button("💾 정비이력 저장", use_container_width=True):
+                    if save_df_to_sheet(VEHICLE_REPAIR_SHEET_NAME, edited_repair_df, REPAIR_COLUMNS):
+                        st.cache_data.clear()
+                        st.success("정비이력 저장 완료!")
+                        st.rerun()
+
+        view_repair_temp = view_repair_df.copy()
+        view_repair_temp["금액_숫자"] = view_repair_temp["금액"].apply(parse_money)
+        selected_total_repair = int(view_repair_temp["금액_숫자"].sum())
+
+        st.info(f"선택 차량 정비비 합계: {selected_total_repair:,}원")
+
+        repair_edit_df = repair_df.copy()
+        repair_edit_df = repair_edit_df.where(pd.notnull(repair_edit_df), "")
+        repair_edit_df = repair_edit_df.replace(["None", "none", "nan", "NaN", "NaT"], "")
+
+        for col in REPAIR_COLUMNS:
+            if col not in repair_edit_df.columns:
+                repair_edit_df[col] = ""
+
+        with st.expander("⚠️ 정비이력 삭제", expanded=False):
+
+            if view_repair_df.empty:
+                st.info("삭제할 정비이력이 없습니다.")
+            else:
+                delete_options = []
+
+                for idx, row in view_repair_df.iterrows():
+                    delete_options.append(
+                        f"{idx} | {row.get('차량번호', '')} | {row.get('수리일자', '')} | {row.get('수리내역', '')} | {row.get('금액', '')}"
+                    )
+
+                selected_delete = st.selectbox(
+                    "삭제할 정비이력 선택",
+                    delete_options,
+                    key="repair_delete_select"
+                )
+
+                confirm_delete = st.checkbox(
+                    "정말 삭제합니다. 되돌리기 어렵습니다.",
+                    key="repair_delete_confirm"
+                )
+
+                if st.button("🗑️ 선택 정비이력 삭제", use_container_width=True, key="repair_delete_btn"):
+                    if not confirm_delete:
+                        st.warning("삭제 확인 체크를 먼저 해주세요.")
+                    else:
+                        delete_idx = int(selected_delete.split("|")[0].strip())
+
+                        save_df = repair_df[REPAIR_COLUMNS].copy()
+                        save_df = save_df.drop(index=delete_idx).reset_index(drop=True)
+
+                        if save_df_to_sheet(VEHICLE_REPAIR_SHEET_NAME, save_df, REPAIR_COLUMNS):
+                            st.cache_data.clear()
+                            st.success("정비이력이 삭제되었습니다.")
+                            st.rerun()
+
+        with st.expander("📊 차량별 정비비 합계", expanded=False):
+
+            if not view_repair_df.empty:
+
+                repair_summary = view_repair_df.copy()
+                repair_summary["금액"] = repair_summary["금액"].apply(parse_money)
+
+                summary_df = (
+                    repair_summary
+                    .groupby("차량번호", as_index=False)["금액"]
+                    .sum()
+                    .sort_values("금액", ascending=False)
+                )
+
+                summary_df["금액"] = summary_df["금액"].apply(lambda x: f"{int(x):,}원")
+
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+            else:
+                st.info("선택한 차량의 정비이력이 없습니다.")
+
+
+    # =====================================================
+    # 3. 보험 만료 경고
+    # =====================================================
+    with tab3:
+        st.subheader("보험 만료 경고")
+
+        today = date.today()
+        warning_rows = []
+
+        for _, row in vehicle_df.iterrows():
+            end_date = parse_insurance_end_date(row.get("보험기간", ""))
+
+            if end_date:
+                remain_days = (end_date - today).days
+
+                if 0 <= remain_days <= 30:
+                    warning_rows.append({
+                        "차량명": row.get("차량명", ""),
+                        "차량번호": row.get("차량번호", ""),
+                        "보험회사": row.get("보험회사", ""),
+                        "보험기간": row.get("보험기간", ""),
+                        "남은일수": remain_days,
+                        "비고": row.get("비고", "")
+                    })
+
+        if warning_rows:
+            st.warning(f"보험 만료 30일 이내 차량이 {len(warning_rows)}대 있습니다.")
+            st.dataframe(pd.DataFrame(warning_rows), use_container_width=True, hide_index=True)
+        else:
+            st.success("보험 만료 임박 차량이 없습니다.")
+
 @st.cache_data(ttl=60)
 def load_inspection_data():
     try:
@@ -6816,6 +7192,7 @@ def main():
             "📡 유지보수관리": [
                 "라우터 관리",
                 "아이센서 유지보수관리",
+                "차량관리"
             ],
             "👥 인사관리": [
                 "연차 관리",
@@ -6923,7 +7300,10 @@ def main():
         inspection_page()
 
     elif menu == "아이센서 유지보수관리":
-        maintenance_page()        
+        maintenance_page()
+
+    elif menu == "차량관리":
+        vehicle_page()            
 
     elif menu == "계약접수현황":
         generic_data_page(
