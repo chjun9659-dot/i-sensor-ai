@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 
 import pandas as pd
 import streamlit as st
+from openpyxl import load_workbook
 # 👇 여기 추가 (이 위치가 핵심)
 def render_common_style():
     st.markdown("""
@@ -1535,6 +1536,40 @@ def render_header():
 
     st.divider()
 
+def save_vacation_log(action, target_name="", use_date="", used_days="", reason="", note=""):
+    """
+    연차 사용/취소/수정/재계산 로그 저장
+    """
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        actor = st.session_state.get("username", "")
+        if not actor:
+            actor = st.session_state.get("name", "")
+        if not actor:
+            actor = "알수없음"
+
+        sh = get_google_sheet()
+        try:
+            ws = sh.worksheet(VACATION_LOG_SHEET_NAME)
+        except:
+            ws = sh.add_worksheet(title=VACATION_LOG_SHEET_NAME, rows=1000, cols=8)
+            ws.append_row(["기록일시", "작업자", "작업구분", "대상직원", "사용일자", "사용일수", "사유", "비고"])
+
+        ws.append_row([
+            now,
+            actor,
+            action,
+            str(target_name),
+            str(use_date),
+            str(used_days),
+            str(reason),
+            str(note),
+        ])
+
+    except Exception as e:
+        st.warning(f"연차 로그 저장 중 오류가 발생했습니다: {e}")
+
 def save_vacation_data_to_excel(df: pd.DataFrame):
     df = df.copy()
 
@@ -1585,6 +1620,7 @@ def save_vacation_data_to_excel(df: pd.DataFrame):
 VACATION_BACKUP_DIR = "backup"
 VACATION_FILE_PATH = "data/vacation.csv"
 USE_COLS = [f"사용일{i}" for i in range(1, 70)]
+VACATION_LOG_SHEET_NAME = "연차사용로그"
 
 def to_number(value, default=0):
     num = pd.to_numeric(value, errors="coerce")
@@ -2740,7 +2776,14 @@ def vacation_page():
             df.iloc[row_pos, used_col_pos] = format_leave_number(used_leave)
             df.iloc[row_pos, remain_col_pos] = format_leave_number(remain_leave)
 
-            save_vacation_data(df)
+            save_vacation_log(
+                action="재계산",
+                target_name=str(selected_name),
+                use_date="",
+                used_days="",
+                reason="",
+                note="선택 직원 연차 다시 계산"
+            )
             st.cache_data.clear()
             st.success(f"{selected_name} 연차가 다시 계산되었습니다.")
             st.rerun()
@@ -2819,6 +2862,16 @@ def vacation_page():
                         df.loc[target_idx, "잔여 연차"] = target_one.loc[target_idx, "잔여 연차"]
 
                         save_vacation_data(df)
+
+                        save_vacation_log(
+                            action="등록",
+                            target_name=str(selected_name),
+                            use_date=str(use_date),
+                            used_days=str(leave_amount),
+                            reason=str(leave_type),
+                            note="연차 사용 등록"
+                        )
+
                         st.cache_data.clear()
                         st.success("연차 등록 완료!")
                         st.rerun()
@@ -2900,6 +2953,16 @@ def vacation_page():
                     df.loc[idx, "잔여 연차"] = float(new_remain)
 
                     save_vacation_data(df)
+
+                    save_vacation_log(
+                        action="취소",
+                        target_name=str(selected_name),
+                        use_date="",
+                        used_days="",
+                        reason="연차 사용 취소",
+                        note="선택 사용일 취소"
+                    )
+
                     st.cache_data.clear()
                     st.success("연차 취소 완료!")
                     st.rerun()
