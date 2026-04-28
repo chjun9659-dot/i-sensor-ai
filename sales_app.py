@@ -2678,16 +2678,28 @@ def vacation_page():
                     if empty_col_idx is None:
                         st.error("사용일 칸이 모두 찼습니다. 사용일1~사용일30을 확인해주세요.")
                     else:
+
+                        # ✅ 기산기간 밖 연차 입력 차단
+                        start_date = pd.to_datetime(df.iloc[row_pos]["기산시작일"], errors="coerce")
+                        end_date = pd.to_datetime(df.iloc[row_pos]["기산종료일"], errors="coerce")
+
+                        if pd.notna(start_date) and pd.notna(end_date):
+                            if use_date < start_date.date() or use_date > end_date.date():
+                                st.error(
+                                    f"⚠️ 기산기간 외 연차입니다. "
+                                    f"이 직원의 기산기간은 {start_date.date()} ~ {end_date.date()} 입니다."
+                                )
+                                st.stop()
+
                         df.iat[row_pos, empty_col_idx] = format_leave_date(use_date, leave_type)
 
-                        new_used = float(current_used) + float(leave_amount)
-                        new_remain = float(current_total) - new_used
+                        target_idx = df.index[row_pos]
 
-                        used_col_pos = list(df.columns).index("사용 연차")
-                        remain_col_pos = list(df.columns).index("잔여 연차")
+                        target_one = df.loc[[target_idx]].copy()
+                        target_one = recalculate_vacation_summary(target_one)
 
-                        df.iat[row_pos, used_col_pos] = format_leave_number(new_used)
-                        df.iat[row_pos, remain_col_pos] = format_leave_number(new_remain)
+                        df.loc[target_idx, "사용 연차"] = target_one.loc[target_idx, "사용 연차"]
+                        df.loc[target_idx, "잔여 연차"] = target_one.loc[target_idx, "잔여 연차"]
 
                         save_vacation_data(df)
                         st.cache_data.clear()
