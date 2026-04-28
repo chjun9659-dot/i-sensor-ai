@@ -1783,6 +1783,42 @@ def recalculate_all_vacation_data(df: pd.DataFrame):
     df = recalculate_vacation_summary(df)
     return df
 
+def refresh_expired_vacation_rows(df: pd.DataFrame):
+    """
+    기산종료일이 지난 직원만 자동 갱신
+    전체 재정리가 아니라 만료된 직원 행만 처리
+    """
+    df = df.copy()
+    today = date.today()
+    changed = False
+    changed_names = []
+
+    for idx in df.index:
+        end_date = pd.to_datetime(df.loc[idx, "기산종료일"], errors="coerce")
+
+        if pd.isna(end_date):
+            continue
+
+        if today > end_date.date():
+            hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
+
+            if pd.isna(hire_date):
+                continue
+
+            start_date, new_end_date, service_years, leave_days = calculate_auto_leave_days(hire_date.date())
+
+            df.loc[idx, "기산시작일"] = str(start_date)
+            df.loc[idx, "기산종료일"] = str(new_end_date)
+            df.loc[idx, "근속년수"] = int(service_years)
+            df.loc[idx, "발생 연차"] = float(leave_days)
+
+            changed = True
+            changed_names.append(str(df.loc[idx, "이름"]))
+
+    if changed:
+        df = recalculate_vacation_summary(df)
+
+    return df, changed, changed_names
 
 def build_monthly_stats(df, target_year, target_month):
     rows = []
@@ -2518,6 +2554,20 @@ def vacation_page():
 
     try:
         df = load_df("연차관리")
+
+        # ✅ 기산종료일 지난 직원만 자동 갱신
+        df, vacation_changed, changed_names = refresh_expired_vacation_rows(df)
+
+        if vacation_changed:
+            backup_file = create_backup()
+            save_vacation_data(df)
+            st.cache_data.clear()
+            st.info(
+                f"기산기간이 지난 직원 연차가 자동 갱신되었습니다: "
+                f"{', '.join(changed_names)} / 백업: {backup_file}"
+            )
+            st.rerun()
+
         df = apply_role_filter(df)
 
         users = load_users_from_gsheet()
@@ -2627,6 +2677,21 @@ def vacation_page():
         st.warning("잔여 연차가 5일 이하입니다.")
     else:
         st.success("잔여 연차가 충분합니다.")
+
+    if is_admin:
+        if st.button("🔄 선택 직원 연차 다시 계산", use_container_width=True, key="vac_recalc_selected_btn"):
+            idx = df[df["이름"] == selected_name].index[0]
+
+            target_one = df.loc[[idx]].copy()
+            target_one = recalculate_vacation_summary(target_one)
+
+            df.loc[idx, "사용 연차"] = target_one.iloc[0]["사용 연차"]
+            df.loc[idx, "잔여 연차"] = target_one.iloc[0]["잔여 연차"]
+
+            save_vacation_data(df)
+            st.cache_data.clear()
+            st.success(f"{selected_name} 연차가 다시 계산되었습니다.")
+            st.rerun()
 
     # =====================================================
     # 관리자: 직원별 요약 카드
