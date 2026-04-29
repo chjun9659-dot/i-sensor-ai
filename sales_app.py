@@ -28,9 +28,41 @@ def render_common_style():
         transition: all 0.2s ease;
     }
 
+    /* 카드 hover */
     .yw-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+        transform: translateY(-4px) scale(1.01);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+    }
+
+    /* expander hover */
+    div[data-testid="stExpander"] {
+        border-radius: 12px;
+        transition: all 0.2s ease;
+    }
+
+    div[data-testid="stExpander"] > div {
+        background: #ffffff;
+        border-radius: 12px;
+    }
+
+    /* 클릭 느낌 */
+    div[data-testid="stExpanderHeader"] {
+        cursor: pointer;
+    }
+                
+    /* Streamlit metric 카드 hover */
+    div[data-testid="stMetric"] {
+        background: #ffffff !important;
+        border-radius: 14px !important;
+        border: 1px solid #e2e8f0 !important;
+        padding: 14px !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+    }
+
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-4px) scale(1.01);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.12) !important;
     }
 
     /* 컬러 라인 */
@@ -4063,6 +4095,15 @@ def render_inspection_common_style():
         box-shadow: 0 2px 6px rgba(0,0,0,0.05);
     }
 
+    .erp-summary-card {
+        transition: all 0.2s ease !important;
+    }
+
+    .erp-summary-card:hover {
+        transform: translateY(-4px) scale(1.01);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.12) !important;
+    }      
+                      
     /* KPI */
     div[data-testid="stMetricValue"] {
         font-size: 22px !important;
@@ -4187,6 +4228,7 @@ def render_inspection_common_style():
 
 def inspection_page():
     render_inspection_common_style()
+    render_common_style()
 
     st.markdown('<div class="erp-page-title">🔎 실사 관리 프로그램</div>', unsafe_allow_html=True)
     st.markdown(
