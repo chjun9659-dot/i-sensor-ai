@@ -6,6 +6,7 @@ from datetime import datetime, date, timedelta
 import pandas as pd
 import streamlit as st
 from openpyxl import load_workbook
+import calendar
 # 👇 여기 추가 (이 위치가 핵심)
 def render_common_style():
     st.markdown("""               
@@ -6633,6 +6634,119 @@ def page_schedule():
 
     st.write("---")
     view_df = apply_author_filter(df)
+    st.subheader("📅 월별 일정 달력")
+
+    today = date.today()
+
+    cal_col1, cal_col2 = st.columns(2)
+
+    with cal_col1:
+        cal_year = st.number_input(
+            "연도",
+            min_value=2020,
+            max_value=2100,
+            value=today.year,
+            step=1,
+            key="personal_schedule_calendar_year"
+        )
+
+    with cal_col2:
+        cal_month = st.selectbox(
+            "월",
+            list(range(1, 13)),
+            index=today.month - 1,
+            key="personal_schedule_calendar_month"
+        )
+
+    calendar_df = df.copy()
+
+    if "날짜" in calendar_df.columns:
+        calendar_df["날짜"] = pd.to_datetime(calendar_df["날짜"], errors="coerce")
+        calendar_df = calendar_df.dropna(subset=["날짜"])
+
+        calendar_df = calendar_df[
+            (calendar_df["날짜"].dt.year == int(cal_year)) &
+            (calendar_df["날짜"].dt.month == int(cal_month))
+        ].copy()
+
+        schedule_map = {}
+
+        for _, row in calendar_df.iterrows():
+            day = row["날짜"].day
+            title = str(row.get("일정명", "")).strip()
+
+            if day not in schedule_map:
+                schedule_map[day] = []
+
+            if title:
+                schedule_map[day].append(title)
+
+        cal = calendar.Calendar(firstweekday=6)
+        month_days = cal.monthdayscalendar(int(cal_year), int(cal_month))
+
+        html = """
+        <style>
+        .calendar-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .calendar-table th {
+            background: #f1f5f9;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+        }
+        .calendar-table td {
+            height: 110px;
+            vertical-align: top;
+            border: 1px solid #e2e8f0;
+            padding: 8px;
+            background: #ffffff;
+        }
+        .calendar-day {
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .calendar-item {
+            font-size: 12px;
+            background: #eff6ff;
+            border-radius: 6px;
+            padding: 4px 6px;
+            margin-bottom: 4px;
+            color: #1e3a8a;
+        }
+        </style>
+
+        <table class="calendar-table">
+        <tr>
+        <th>일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th>토</th>
+        </tr>
+        """
+
+        for week in month_days:
+            html += "<tr>"
+            for day in week:
+                if day == 0:
+                    html += "<td></td>"
+                else:
+                    items = schedule_map.get(day, [])
+                    item_html = ""
+
+                    for item in items:
+                        safe_item = str(item).replace("<", "").replace(">", "")
+                        item_html += f'<div class="calendar-item">{safe_item}</div>'
+
+                    html += f'<td><div class="calendar-day">{day}</div>{item_html}</td>'
+
+            html += "</tr>"
+
+        html += "</table>"
+
+        st.markdown(html, unsafe_allow_html=True)
+
+    else:
+        st.info("날짜 컬럼이 없어 달력을 표시할 수 없습니다.")
 
     if view_df.empty:
         st.info("등록된 일정이 없습니다.")
