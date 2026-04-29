@@ -121,6 +121,8 @@ USER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1uUjrdRwTjdvKoED1dWKsik
 # =========================================================
 # 업무일정 구글시트
 # =========================================================
+# 업무일정 구글시트
+WORK_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1OfYbKceuwIcCqhGjDxT0nevQXSkNH7muwsKZOPiMHZs/edit?gid=0#gid=0"
 WORK_SCHEDULE_SHEET_NAME = "업무일정"
 WORK_SCHEDULE_COLUMNS = ["날짜", "업무내용", "담당자", "상태", "메모"]
 
@@ -2250,8 +2252,9 @@ def save_schedule_data(df, sheet=None):
 # =========================================================
 def load_work_schedule_data():
     try:
-        sh = get_google_sheet()
-        ws = sh.worksheet(WORK_SCHEDULE_SHEET_NAME)
+        client = get_gsheet_client()
+        spreadsheet = client.open_by_url(WORK_SCHEDULE_SHEET_URL)
+        ws = spreadsheet.worksheet(WORK_SCHEDULE_SHEET_NAME)
 
         records = ws.get_all_records()
         df = pd.DataFrame(records)
@@ -2272,8 +2275,9 @@ def load_work_schedule_data():
 
 def save_work_schedule_data(df):
     try:
-        sh = get_google_sheet()
-        ws = sh.worksheet(WORK_SCHEDULE_SHEET_NAME)
+        client = get_gsheet_client()
+        spreadsheet = client.open_by_url(WORK_SCHEDULE_SHEET_URL)
+        ws = spreadsheet.worksheet(WORK_SCHEDULE_SHEET_NAME)
 
         save_df = df.copy()
 
