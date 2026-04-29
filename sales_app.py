@@ -6728,6 +6728,30 @@ def page_tasks():
     else:
         st.dataframe(view_df.iloc[::-1].reset_index(drop=True), use_container_width=True, hide_index=True)
 
+        # =========================
+        # 오늘할일 삭제 기능
+        # =========================
+        if not view_df.empty:
+            delete_options = [
+                f"{idx} | {row['등록일시']} | {row['작성자']} | {row['할일']}"
+                for idx, row in view_df.iterrows()
+            ]
+
+            selected_delete = st.selectbox(
+                "삭제할 할일 선택",
+                delete_options,
+                key="task_delete_select"
+            )
+
+            if st.button("선택한 할일 삭제", key="task_delete_btn"):
+                delete_idx = int(selected_delete.split("|")[0].strip())
+
+                df = df.drop(index=delete_idx).reset_index(drop=True)
+                save_tasks_df(df)
+
+                st.cache_data.clear()
+                st.success("삭제 완료")
+                st.rerun()
 
 def page_schedule():
     st.title("📅 일정 관리")
@@ -6874,6 +6898,30 @@ def page_schedule():
         temp_df = temp_df.sort_values(["날짜정렬", "등록일시"], ascending=[True, False]).drop(columns=["날짜정렬"])
         st.dataframe(temp_df, use_container_width=True, hide_index=True)
 
+        # =========================
+        # 일정 삭제 기능
+        # =========================
+        if not view_df.empty:
+            delete_options = [
+                f"{idx} | {row['날짜']} | {row['일정명']} | {row['작성자']}"
+                for idx, row in view_df.iterrows()
+            ]
+
+            selected_delete = st.selectbox(
+                "삭제할 일정 선택",
+                delete_options,
+                key="schedule_delete_select"
+            )
+
+            if st.button("선택한 일정 삭제", key="schedule_delete_btn"):
+                delete_idx = int(selected_delete.split("|")[0].strip())
+
+                df = df.drop(index=delete_idx).reset_index(drop=True)
+                save_schedule_df(df)
+
+                st.cache_data.clear()
+                st.success("일정 삭제 완료")
+                st.rerun()
 
 def page_alerts():
     st.title("🚨 영업 알림")
