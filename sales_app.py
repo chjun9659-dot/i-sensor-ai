@@ -6405,12 +6405,15 @@ def page_dashboard():
                 v2.metric("잔여 5일 이하", len(low_leave_df))
                 v3.metric("잔여 0일 이하", len(zero_leave_df))
 
-                st.subheader("📊 연차 사용 현황 그래프")
+                if login_role == "관리자":
+                    st.subheader("📊 연차 사용 현황 그래프")
 
-                leave_chart_df = vacation_df[["이름", "사용 연차", "잔여 연차"]].copy()
-                leave_chart_df = leave_chart_df.set_index("이름")
+                    leave_chart_df = vacation_df[["이름", "사용 연차", "잔여 연차"]].copy()
+                    leave_chart_df = leave_chart_df.set_index("이름")
 
-                st.bar_chart(leave_chart_df)
+                    st.bar_chart(leave_chart_df)
+                else:
+                    st.info("본인 연차 요약만 표시됩니다.")
 
         except Exception as e:
             st.warning(f"연차 요약을 불러오지 못했습니다: {e}")
