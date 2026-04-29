@@ -2184,6 +2184,29 @@ def save_schedule_data(df, sheet=None):
 
 SCHEDULE_LOG_COLUMNS = ["시간", "사용자", "사업", "작업", "설치현장", "시공담당", "비고"]
 
+def find_original_schedule_index(full_df, target_row):
+    full_df = full_df[EXPECTED_COLUMNS].copy().fillna("")
+
+    for col in EXPECTED_COLUMNS:
+        full_df[col] = full_df[col].astype(str).str.strip()
+
+    mask = (
+        (full_df["날짜"] == str(target_row["날짜"]).strip()) &
+        (full_df["상품구분"] == str(target_row["상품구분"]).strip()) &
+        (full_df["설치현장"] == str(target_row["설치현장"]).strip()) &
+        (full_df["시공담당"] == str(target_row["시공담당"]).strip()) &
+        (full_df["수량"].astype(str) == str(target_row["수량"]).strip()) &
+        (full_df["비고"] == str(target_row["비고"]).strip()) &
+        (full_df["상태"] == str(target_row["상태"]).strip())
+    )
+
+    matched = full_df[mask]
+
+    if matched.empty:
+        return None
+
+    return matched.index[0]
+
 def save_schedule_log(action, site="", manager="", note=""):
     try:
         log_path = os.path.join(DATA_DIR, "schedule_work_log.csv")
@@ -2455,27 +2478,36 @@ def schedule_page():
                 edit_submit = st.form_submit_button("수정 저장")
 
                 if edit_submit:
-                    save_df = df[EXPECTED_COLUMNS].copy()
-                    save_df.loc[edit_idx, "날짜"] = str(edit_date)
-                    save_df.loc[edit_idx, "설치현장"] = edit_site.strip()
-                    save_df.loc[edit_idx, "시공담당"] = edit_manager.strip()
-                    save_df.loc[edit_idx, "수량"] = int(edit_qty)
-                    save_df.loc[edit_idx, "비고"] = edit_note.strip()
-                    save_df.loc[edit_idx, "상태"] = edit_status
+                    full_df = load_schedule_data()
+                    full_df = full_df[EXPECTED_COLUMNS].copy()
 
-                    if edit_status == "완료" and not str(save_df.loc[edit_idx, "완료일"]).strip():
-                        save_df.loc[edit_idx, "완료일"] = today_str
+                    original_idx = find_original_schedule_index(full_df, edit_row)
+
+                    if original_idx is None:
+                        st.error("원본 구글시트에서 해당 일정을 찾지 못했습니다. 저장을 중단합니다.")
+                        st.stop()
+
+                    full_df.loc[original_idx, "날짜"] = str(edit_date)
+                    full_df.loc[original_idx, "설치현장"] = edit_site.strip()
+                    full_df.loc[original_idx, "시공담당"] = edit_manager.strip()
+                    full_df.loc[original_idx, "수량"] = int(edit_qty)
+                    full_df.loc[original_idx, "비고"] = edit_note.strip()
+                    full_df.loc[original_idx, "상태"] = edit_status
+
+                    if edit_status == "완료" and not str(full_df.loc[original_idx, "완료일"]).strip():
+                        full_df.loc[original_idx, "완료일"] = today_str
                     elif edit_status == "진행중":
-                        save_df.loc[edit_idx, "완료일"] = ""
+                        full_df.loc[original_idx, "완료일"] = ""
 
-                    save_schedule_data(save_df)
+                    save_schedule_data(full_df)
 
                     save_schedule_log(
                         "수정",
                         site=edit_site.strip(),
                         manager=edit_manager.strip(),
-                        note=f"상태 {edit_status} / 수량 {int(edit_qty) if str(edit_qty).isdigit() else 0}"
+                        note=f"상태 {edit_status} / 수량 {int(edit_qty)}"
                     )
+
                     st.success("수정 완료!")
                     st.rerun()
 
@@ -2496,12 +2528,21 @@ def schedule_page():
 
             if st.button("완료로 변경", key="sch_complete_btn_unique"):
                 complete_idx = int(selected_complete.split("|")[0].strip())
-                save_df = df[EXPECTED_COLUMNS].copy()
-                save_df.loc[complete_idx, "상태"] = "완료"
-                save_df.loc[complete_idx, "완료일"] = today_str
                 target_row = df.loc[df["row_id"] == complete_idx].iloc[0]
 
-                save_schedule_data(save_df)
+                full_df = load_schedule_data()
+                full_df = full_df[EXPECTED_COLUMNS].copy()
+
+                original_idx = find_original_schedule_index(full_df, target_row)
+
+                if original_idx is None:
+                    st.error("원본 구글시트에서 해당 일정을 찾지 못했습니다. 저장을 중단합니다.")
+                    st.stop()
+
+                full_df.loc[original_idx, "상태"] = "완료"
+                full_df.loc[original_idx, "완료일"] = today_str
+
+                save_schedule_data(full_df)
 
                 save_schedule_log(
                     "완료",
@@ -2530,10 +2571,22 @@ def schedule_page():
 
             if st.button("진행중으로 변경", key="sch_cancel_btn_unique"):
                 cancel_idx = int(selected_cancel.split("|")[0].strip())
-                save_df = df[EXPECTED_COLUMNS].copy()
-                save_df.loc[cancel_idx, "상태"] = "진행중"
-                save_df.loc[cancel_idx, "완료일"] = ""
-                save_schedule_data(save_df)
+                target_row = df.loc[df["row_id"] == cancel_idx].iloc[0]
+
+                full_df = load_schedule_data()
+                full_df = full_df[EXPECTED_COLUMNS].copy()
+
+                original_idx = find_original_schedule_index(full_df, target_row)
+
+                if original_idx is None:
+                    st.error("원본 구글시트에서 해당 일정을 찾지 못했습니다. 저장을 중단합니다.")
+                    st.stop()
+
+                full_df.loc[original_idx, "상태"] = "진행중"
+                full_df.loc[original_idx, "완료일"] = ""
+
+                save_schedule_data(full_df)
+
                 st.success("완료 취소되었습니다.")
                 st.rerun()
 
@@ -2552,11 +2605,20 @@ def schedule_page():
 
             if st.button("선택 일정 삭제", key="sch_delete_btn_unique"):
                 delete_idx = int(selected_delete.split("|")[0].strip())
-                save_df = df[EXPECTED_COLUMNS].copy()
                 target_row = df.loc[df["row_id"] == delete_idx].iloc[0]
 
-                save_df = save_df.drop(index=delete_idx).reset_index(drop=True)
-                save_schedule_data(save_df)
+                full_df = load_schedule_data()
+                full_df = full_df[EXPECTED_COLUMNS].copy()
+
+                original_idx = find_original_schedule_index(full_df, target_row)
+
+                if original_idx is None:
+                    st.error("원본 구글시트에서 해당 일정을 찾지 못했습니다. 삭제를 중단합니다.")
+                    st.stop()
+
+                full_df = full_df.drop(index=original_idx).reset_index(drop=True)
+
+                save_schedule_data(full_df)
 
                 save_schedule_log(
                     "삭제",
@@ -3378,6 +3440,27 @@ def normalize_inspection_df(df):
 
     return df
 
+def find_original_inspection_index(full_df, target_row):
+    full_df = full_df[INSPECTION_COLUMNS].copy().fillna("")
+
+    for col in INSPECTION_COLUMNS:
+        full_df[col] = full_df[col].astype(str).str.strip()
+
+    mask = (
+        (full_df["요청일"] == str(target_row["요청일"]).strip()) &
+        (full_df["상품구분"] == str(target_row["상품구분"]).strip()) &
+        (full_df["현장명"] == str(target_row["현장명"]).strip()) &
+        (full_df["현장주소"] == str(target_row["현장주소"]).strip()) &
+        (full_df["영업담당자"] == str(target_row["영업담당자"]).strip())
+    )
+
+    matched = full_df[mask]
+
+    if matched.empty:
+        return None
+
+    return matched.index[0]
+
 # =========================================================
 # 차량관리
 # =========================================================
@@ -4101,6 +4184,13 @@ def inspection_page():
 
     # ✅ 사업 선택에 따라 실사 데이터 분리
     df = apply_product_filter(df)
+    # ✅ 화면 표시용 중복 제거
+    dedup_keys = ["요청일", "상품구분", "현장명", "현장주소", "영업담당자"]
+
+    existing_keys = [c for c in dedup_keys if c in df.columns]
+
+    if existing_keys:
+        df = df.drop_duplicates(subset=existing_keys, keep="first").copy()
 
     df = df.reset_index(drop=True)
     df["row_id"] = df.index
@@ -4262,7 +4352,7 @@ def inspection_page():
 
                     save_df = df[INSPECTION_COLUMNS].copy() if not df.empty else pd.DataFrame(columns=INSPECTION_COLUMNS)
                     save_df = pd.concat([save_df, new_row], ignore_index=True)
-                    save_inspection_data(save_df)
+                    save_inspection_data(full_df)
 
                     set_inspection_flash("실사 요청이 등록되었습니다.", "success")
                     st.session_state.inspection_form_version += 1
@@ -4444,22 +4534,44 @@ def inspection_page():
                 delete_submit = b2.form_submit_button("담당자 배정 삭제")
 
                 if assign_submit:
-                    save_df = df[INSPECTION_COLUMNS].copy()
-                    save_df.loc[assign_idx, "실사담당자"] = inspector.strip()
-                    save_df.loc[assign_idx, "실사예정일"] = str(inspect_date)
-                    save_df.loc[assign_idx, "진행상태"] = inspect_status
-                    save_inspection_data(save_df)
+                    target_row = df.loc[df["row_id"] == assign_idx].iloc[0]
+
+                    full_df = load_inspection_data()
+                    full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                    original_idx = find_original_inspection_index(full_df, target_row)
+
+                    if original_idx is None:
+                        st.error("원본 데이터를 찾지 못했습니다.")
+                        st.stop()
+
+                    full_df.loc[original_idx, "실사담당자"] = inspector.strip()
+                    full_df.loc[original_idx, "실사예정일"] = str(inspect_date)
+                    full_df.loc[original_idx, "진행상태"] = inspect_status
+
+                    save_inspection_data(full_df)
                     st.cache_data.clear()
 
                     set_inspection_flash("담당자 배정 및 일정 저장 완료!", "success")
                     st.rerun()
 
                 if delete_submit:
-                    save_df = df[INSPECTION_COLUMNS].copy()
-                    save_df.loc[assign_idx, "실사담당자"] = ""
-                    save_df.loc[assign_idx, "실사예정일"] = ""
-                    save_df.loc[assign_idx, "진행상태"] = "요청접수"
-                    save_inspection_data(save_df)
+                    target_row = df.loc[df["row_id"] == assign_idx].iloc[0]
+
+                    full_df = load_inspection_data()
+                    full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                    original_idx = find_original_inspection_index(full_df, target_row)
+
+                    if original_idx is None:
+                        st.error("원본 데이터를 찾지 못했습니다.")
+                        st.stop()
+
+                    full_df.loc[original_idx, "실사담당자"] = ""
+                    full_df.loc[original_idx, "실사예정일"] = ""
+                    full_df.loc[original_idx, "진행상태"] = "요청접수"
+
+                    save_inspection_data(full_df)
                     st.cache_data.clear()
 
                     set_inspection_flash("담당자 배정이 삭제되었습니다.", "success")
@@ -4502,13 +4614,24 @@ def inspection_page():
                 result_submit = st.form_submit_button("실사 결과 저장")
 
                 if result_submit:
-                    save_df = df[INSPECTION_COLUMNS].copy()
-                    save_df.loc[result_idx, "실사결과"] = result_text.strip()
-                    save_df.loc[result_idx, "특이사항"] = special_note.strip()
-                    save_df.loc[result_idx, "후속조치"] = follow_up.strip()
-                    save_df.loc[result_idx, "실사완료일"] = str(complete_date)
-                    save_df.loc[result_idx, "진행상태"] = result_status
-                    save_inspection_data(save_df)
+                    target_row = df.loc[df["row_id"] == result_idx].iloc[0]
+
+                    full_df = load_inspection_data()
+                    full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                    original_idx = find_original_inspection_index(full_df, target_row)
+
+                    if original_idx is None:
+                        st.error("원본 데이터를 찾지 못했습니다.")
+                        st.stop()
+
+                    full_df.loc[original_idx, "실사결과"] = result_text.strip()
+                    full_df.loc[original_idx, "특이사항"] = special_note.strip()
+                    full_df.loc[original_idx, "후속조치"] = follow_up.strip()
+                    full_df.loc[original_idx, "실사완료일"] = str(complete_date)
+                    full_df.loc[original_idx, "진행상태"] = result_status
+
+                    save_inspection_data(full_df)
 
                     set_inspection_flash("실사 결과 저장 완료!", "success")
                     st.rerun()
@@ -4552,22 +4675,29 @@ def inspection_page():
                 contract_submit = st.form_submit_button("계약 정보 저장")
 
                 if contract_submit:
-                    save_df = df[INSPECTION_COLUMNS].copy()
-                    save_df.loc[contract_idx, "계약여부"] = contract_status
-                    save_df.loc[contract_idx, "계약일"] = str(contract_date) if contract_status == "계약" else ""
-                    save_df.loc[contract_idx, "계약수량"] = int(contract_qty) if contract_status == "계약" else 0
-                    save_df.loc[contract_idx, "계약금액"] = int(contract_amount) if contract_status == "계약" else 0
-                    save_df.loc[contract_idx, "미계약사유"] = fail_reason.strip() if contract_status == "미계약" else ""
+                    target_row = df.loc[df["row_id"] == contract_idx].iloc[0]
+
+                    full_df = load_inspection_data()
+                    full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                    original_idx = find_original_inspection_index(full_df, target_row)
+
+                    if original_idx is None:
+                        st.error("원본 데이터를 찾지 못했습니다.")
+                        st.stop()
+
+                    full_df.loc[original_idx, "계약여부"] = contract_status
+                    full_df.loc[original_idx, "계약일"] = str(contract_date) if contract_status == "계약" else ""
+                    full_df.loc[original_idx, "계약수량"] = int(contract_qty) if contract_status == "계약" else 0
+                    full_df.loc[original_idx, "계약금액"] = int(contract_amount) if contract_status == "계약" else 0
+                    full_df.loc[original_idx, "미계약사유"] = fail_reason.strip() if contract_status == "미계약" else ""
 
                     if contract_status == "계약":
-                        save_df.loc[contract_idx, "진행상태"] = "계약완료"
+                        full_df.loc[original_idx, "진행상태"] = "계약완료"
                     elif contract_status == "미계약":
-                        save_df.loc[contract_idx, "진행상태"] = "미계약종결"
+                        full_df.loc[original_idx, "진행상태"] = "미계약종결"
 
-                    save_inspection_data(save_df)
-
-                    set_inspection_flash("계약 정보 저장 완료!", "success")
-                    st.rerun()
+                    save_inspection_data(full_df)
 
     st.divider()
 
@@ -4912,27 +5042,38 @@ def inspection_page():
                     cancel_submit = s2.form_submit_button("취소", use_container_width=True)
 
                     if save_submit:
-                        save_df = df[INSPECTION_COLUMNS].copy()
+                        target_row = df.loc[df["row_id"] == view_idx].iloc[0]
 
-                        save_df.loc[view_idx, "요청일"] = str(edit_req_date)
-                        save_df.loc[view_idx, "운영사"] = edit_operator.strip()
-                        save_df.loc[view_idx, "현장명"] = edit_name.strip()
-                        save_df.loc[view_idx, "현장주소"] = edit_addr.strip()
-                        save_df.loc[view_idx, "현장연락처"] = edit_phone.strip()
-                        save_df.loc[view_idx, "상품구분"] = edit_product
-                        save_df.loc[view_idx, "주차면수"] = int(edit_parking)
-                        save_df.loc[view_idx, "신규설치수량"] = int(edit_new_qty)
-                        save_df.loc[view_idx, "기설치수량"] = int(edit_old_qty)
-                        save_df.loc[view_idx, "영업담당자"] = edit_sales.strip()
-                        save_df.loc[view_idx, "영업담당연락처"] = edit_sales_phone.strip()
-                        save_df.loc[view_idx, "요청내용"] = edit_request.strip()
-                        save_df.loc[view_idx, "비고"] = edit_note.strip()
-                        save_df.loc[view_idx, "환경부"] = env_gov
-                        save_df.loc[view_idx, "자투"] = jatu
+                        full_df = load_inspection_data()
+                        full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                        original_idx = find_original_inspection_index(full_df, target_row)
+
+                        if original_idx is None:
+                            st.error("원본 데이터를 찾지 못했습니다.")
+                            st.stop()
+
+                        full_df.loc[original_idx, "요청일"] = str(edit_req_date)
+                        full_df.loc[original_idx, "운영사"] = edit_operator.strip()
+                        full_df.loc[original_idx, "현장명"] = edit_name.strip()
+                        full_df.loc[original_idx, "현장주소"] = edit_addr.strip()
+                        full_df.loc[original_idx, "현장연락처"] = edit_phone.strip()
+                        full_df.loc[original_idx, "상품구분"] = edit_product
+                        full_df.loc[original_idx, "주차면수"] = int(edit_parking)
+                        full_df.loc[original_idx, "신규설치수량"] = int(edit_new_qty)
+                        full_df.loc[original_idx, "기설치수량"] = int(edit_old_qty)
+                        full_df.loc[original_idx, "영업담당자"] = edit_sales.strip()
+                        full_df.loc[original_idx, "영업담당연락처"] = edit_sales_phone.strip()
+                        full_df.loc[original_idx, "요청내용"] = edit_request.strip()
+                        full_df.loc[original_idx, "비고"] = edit_note.strip()
+                        full_df.loc[original_idx, "환경부"] = env_gov
+                        full_df.loc[original_idx, "자투"] = jatu
+
+                        save_inspection_data(full_df)
 
                         if delete_current_file:
-                            save_df.loc[view_idx, "첨부파일명"] = ""
-                            save_df.loc[view_idx, "첨부파일링크"] = ""
+                            full_df.loc[original_idx, "첨부파일명"] = ""
+                            full_df.loc[original_idx, "첨부파일링크"] = ""
 
                         if edit_uploaded_file is not None:
                             try:
@@ -4940,13 +5081,13 @@ def inspection_page():
                                     edit_uploaded_file,
                                     folder_id="13W2N1v9IBiuZEstmTrvt57Zg8XQiHt7J"
                                 )
-                                save_df.loc[view_idx, "첨부파일명"] = new_attachment_name
-                                save_df.loc[view_idx, "첨부파일링크"] = new_attachment_link
+                                full_df.loc[original_idx, "첨부파일명"] = new_attachment_name
+                                full_df.loc[original_idx, "첨부파일링크"] = new_attachment_link
                             except Exception as e:
                                 st.error(f"첨부파일 업로드 실패: {e}")
                                 st.stop()
 
-                        save_inspection_data(save_df)
+                        save_inspection_data(full_df)
 
                         st.session_state.inspection_edit_mode = False
                         st.session_state.inspection_edit_target = None
@@ -4977,9 +5118,20 @@ def inspection_page():
                     st.warning("삭제 확인 체크를 먼저 해주세요.")
                 else:
                     delete_idx = int(selected_delete.split("|")[0].strip())
-                    save_df = df[INSPECTION_COLUMNS].copy()
-                    save_df = save_df.drop(index=delete_idx).reset_index(drop=True)
-                    save_inspection_data(save_df)
+                    target_row = df.loc[df["row_id"] == delete_idx].iloc[0]
+
+                    full_df = load_inspection_data()
+                    full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                    original_idx = find_original_inspection_index(full_df, target_row)
+
+                    if original_idx is None:
+                        st.error("원본 데이터를 찾지 못했습니다.")
+                        st.stop()
+
+                    full_df = full_df.drop(index=original_idx).reset_index(drop=True)
+
+                    save_inspection_data(full_df)
 
                     set_inspection_flash("삭제가 완료되었습니다.", "success")
                     st.rerun()
