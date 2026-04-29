@@ -2118,7 +2118,7 @@ def append_schedule_data(new_row_df):
 
     sheet.append_rows(rows, value_input_option="USER_ENTERED")
 
-    st.cache_data.clear()    
+    load_schedule_data.clear()   
 
 def ensure_schedule_sheet_header(sheet):
     values = sheet.get_all_values()
@@ -2219,7 +2219,7 @@ def save_schedule_data(df, sheet=None):
         empty_values = [[""] * len(EXPECTED_COLUMNS) for _ in range(blank_rows)]
         sheet.update(clear_range, empty_values)
 
-    st.cache_data.clear()
+    load_schedule_data.clear()
 
 SCHEDULE_LOG_COLUMNS = ["시간", "사용자", "사업", "작업", "설치현장", "시공담당", "비고"]
 
