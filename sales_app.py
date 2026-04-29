@@ -3440,6 +3440,16 @@ def normalize_inspection_df(df):
 
     return df
 
+def detect_inspection_duplicates(df):
+    keys = ["요청일", "상품구분", "현장명", "현장주소", "영업담당자"]
+    existing_keys = [c for c in keys if c in df.columns]
+
+    if not existing_keys:
+        return pd.DataFrame()
+
+    dup_df = df[df.duplicated(subset=existing_keys, keep=False)].copy()
+    return dup_df
+
 def find_original_inspection_index(full_df, target_row):
     full_df = full_df[INSPECTION_COLUMNS].copy().fillna("")
 
@@ -4184,6 +4194,26 @@ def inspection_page():
 
     # ✅ 사업 선택에 따라 실사 데이터 분리
     df = apply_product_filter(df)
+    # 🚨 중복 감지
+    dup_df = detect_inspection_duplicates(df)
+
+    if not dup_df.empty:
+        st.warning(f"⚠️ 중복 데이터 {len(dup_df)}건 발견되었습니다. (구글시트 정리 필요)")
+
+        with st.expander("중복 데이터 확인", expanded=False):
+            show_cols = ["요청일", "상품구분", "현장명", "현장주소", "영업담당자"]
+        show_cols = [c for c in show_cols if c in dup_df.columns]
+
+        st.dataframe(
+            dup_df[show_cols].sort_values(show_cols),
+            use_container_width=True,
+            hide_index=True
+        )
+    dedup_keys = ["요청일", "상품구분", "현장명", "현장주소", "영업담당자"]
+    existing_keys = [c for c in dedup_keys if c in df.columns]
+
+    if existing_keys:
+        df = df.drop_duplicates(subset=existing_keys, keep="first").copy()
 
     df = df.reset_index(drop=True)
     df["row_id"] = df.index
@@ -6347,6 +6377,14 @@ def page_dashboard():
 
         try:
             vacation_df = load_df("연차관리")
+            # ✅ 대시보드 연차 권한 필터
+            login_role = str(st.session_state.get("role", "")).strip()
+            login_name = str(st.session_state.get("display_name", "")).strip()
+
+            if login_role != "관리자" and "이름" in vacation_df.columns:
+                vacation_df = vacation_df[
+                    vacation_df["이름"].astype(str).str.strip() == login_name
+                ].copy()
 
             if vacation_df.empty:
                 v1, v2, v3 = st.columns(3)
