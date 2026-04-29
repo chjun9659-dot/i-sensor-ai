@@ -4540,9 +4540,14 @@ def inspection_page():
                         "미계약사유": ""
                     }])
 
-                    save_df = df[INSPECTION_COLUMNS].copy() if not df.empty else pd.DataFrame(columns=INSPECTION_COLUMNS)
-                    save_df = pd.concat([save_df, new_row], ignore_index=True)
-                    save_df = pd.concat([save_df, new_row], ignore_index=True)
+                    # ✅ 반드시 원본 전체 실사 데이터를 다시 불러와서 저장
+                    full_df = load_inspection_data()
+                    full_df = full_df[INSPECTION_COLUMNS].copy()
+
+                    # ✅ 새 행 1번만 추가
+                    save_df = pd.concat([full_df, new_row], ignore_index=True)
+
+                    # ✅ 전체 데이터 저장
                     save_inspection_data(save_df)   
 
                     set_inspection_flash("실사 요청이 등록되었습니다.", "success")
@@ -5767,8 +5772,42 @@ def maintenance_page():
                         "첨부파일링크": attachment_link
                     }])
 
-                    save_df = df[MAINTENANCE_COLUMNS].copy() if not df.empty else pd.DataFrame(columns=MAINTENANCE_COLUMNS)
-                    save_df = pd.concat([save_df, new_row], ignore_index=True)
+                    # =========================
+                    # 화면용 데이터
+                    # =========================
+                    if existing_keys:
+                        view_df = df.drop_duplicates(subset=existing_keys, keep="first").copy()
+                    else:
+                        view_df = df.copy()
+
+                    # =========================
+                    # 저장용 데이터
+                    # =========================
+                    full_df = load_maintenance_data()
+
+                    # ✅ 안전장치: 원본 데이터가 비어 있으면 저장 중단
+                    if full_df is None or full_df.empty:
+                        st.error("원본 유지보수 데이터가 비어 있습니다. 저장을 중단합니다.")
+                        st.stop()
+
+                    for col in MAINTENANCE_COLUMNS:
+                        if col not in full_df.columns:
+                            full_df[col] = ""
+
+                    full_df = full_df[MAINTENANCE_COLUMNS].copy()
+
+                    save_df = pd.concat([full_df, new_row], ignore_index=True)
+
+                    save_maintenance_data(save_df)
+
+                    for col in MAINTENANCE_COLUMNS:
+                        if col not in full_df.columns:
+                            full_df[col] = ""
+
+                    full_df = full_df[MAINTENANCE_COLUMNS].copy()
+
+                    save_df = pd.concat([full_df, new_row], ignore_index=True)
+
                     save_maintenance_data(save_df)
 
                     st.success("유지보수 계약 등록 완료!")
