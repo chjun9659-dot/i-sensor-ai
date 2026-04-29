@@ -8,17 +8,24 @@ import streamlit as st
 from openpyxl import load_workbook
 # 👇 여기 추가 (이 위치가 핵심)
 def render_common_style():
-    st.markdown("""
+    st.markdown("""               
     <style>
+    .main {
+        background-color: #f1f5f9 !important;
+    }
     .yw-card {
         background: #ffffff;
-        border-radius: 12px;
-        padding: 14px 16px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        border-radius: 14px;
+        padding: 16px;
+        border: 1px solid #e2e8f0;
+
+        /* 🔥 여기 핵심 */
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+
         border-left: 5px solid transparent;
         min-height: 80px;
         margin-bottom: 8px;
-        transition: all 0.2s ease;  /* 👈 여기 */
+        transition: all 0.2s ease;
     }
 
     .yw-card:hover {
