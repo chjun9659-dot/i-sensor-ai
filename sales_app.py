@@ -1286,10 +1286,7 @@ def apply_author_filter(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    business_name = st.session_state.business
-    if "사업" in df.columns:
-        df = df[df["사업"].astype(str).str.strip() == business_name].copy()
-
+    # ✅ 업무관리는 사업 구분 없이 작성자 기준만 적용
     if is_admin():
         return df
 
@@ -1297,7 +1294,10 @@ def apply_author_filter(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     user_name = current_user_name().strip()
-    return df[df["작성자"].astype(str).str.strip() == user_name].copy()
+
+    return df[
+        df["작성자"].astype(str).str.strip() == user_name
+    ].copy()
 
 
 # =========================================================
