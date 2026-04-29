@@ -123,8 +123,50 @@ USER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1uUjrdRwTjdvKoED1dWKsik
 # =========================================================
 # 업무일정 구글시트
 WORK_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1OfYbKceuwIcCqhGjDxT0nevQXSkNH7muwsKZOPiMHZs/edit?gid=0#gid=0"
+
 WORK_SCHEDULE_SHEET_NAME = "업무일정"
 WORK_SCHEDULE_COLUMNS = ["날짜", "업무내용", "담당자", "상태", "메모"]
+
+TODAY_TASK_SHEET_NAME = "오늘할일"
+TODAY_TASK_COLUMNS = ["등록일시", "작성자", "사업", "할일"]
+
+def load_today_tasks():
+    try:
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", WORK_SCHEDULE_SHEET_URL).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        ws = spreadsheet.worksheet(TODAY_TASK_SHEET_NAME)
+
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            df = pd.DataFrame(columns=TODAY_TASK_COLUMNS)
+
+        for col in TODAY_TASK_COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
+
+        return df[TODAY_TASK_COLUMNS].copy()
+
+    except Exception as e:
+        st.warning(f"오늘할일 불러오기 실패: {e}")
+        return pd.DataFrame(columns=TODAY_TASK_COLUMNS)
+
+def save_today_tasks(df):
+    try:
+        client = get_gsheet_client()
+        sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", WORK_SCHEDULE_SHEET_URL).group(1)
+        spreadsheet = client.open_by_key(sheet_id)
+        ws = spreadsheet.worksheet(TODAY_TASK_SHEET_NAME)
+
+        save_df = df[TODAY_TASK_COLUMNS].fillna("")
+
+        ws.clear()
+        ws.update([TODAY_TASK_COLUMNS] + save_df.values.tolist())
+
+    except Exception as e:
+        st.error(f"오늘할일 저장 실패: {e}")  
 
 def load_users_from_gsheet():
     """
@@ -846,7 +888,7 @@ def init_files():
     ensure_money_files()
 
 def load_tasks_df():
-    df = load_common_df("할일")
+    df = load_today_tasks()
     for col in ["등록일시", "작성자", "사업", "할일"]:
         if col not in df.columns:
             df[col] = ""
@@ -854,7 +896,7 @@ def load_tasks_df():
 
 
 def save_tasks_df(df: pd.DataFrame):
-    save_common_df("할일", df[["등록일시", "작성자", "사업", "할일"]].copy())
+    save_today_tasks(df)
 
 def load_schedule_df():
     df = load_work_schedule_data()
