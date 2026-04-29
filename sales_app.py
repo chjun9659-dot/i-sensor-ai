@@ -118,7 +118,11 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # 사용자관리 구글시트
 # =========================================================
 USER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1uUjrdRwTjdvKoED1dWKsikAOGWNxMR59Eht-SYdRX1w/edit?gid=0#gid=0"
-
+# =========================================================
+# 업무일정 구글시트
+# =========================================================
+WORK_SCHEDULE_SHEET_NAME = "업무일정"
+WORK_SCHEDULE_COLUMNS = ["날짜", "업무내용", "담당자", "상태", "메모"]
 
 def load_users_from_gsheet():
     """
@@ -850,17 +854,36 @@ def load_tasks_df():
 def save_tasks_df(df: pd.DataFrame):
     save_common_df("할일", df[["등록일시", "작성자", "사업", "할일"]].copy())
 
-
 def load_schedule_df():
-    df = load_common_df("일정")
+    df = load_work_schedule_data()
+
+    # 기존 업무일정 화면 컬럼 구조 유지
+    rename_map = {
+        "업무내용": "일정명",
+        "담당자": "작성자",
+        "메모": "사업",
+    }
+
+    df = df.rename(columns=rename_map)
+
     for col in ["등록일시", "작성자", "사업", "일정명", "날짜"]:
         if col not in df.columns:
             df[col] = ""
+
     return df[["등록일시", "작성자", "사업", "일정명", "날짜"]].copy()
 
-
 def save_schedule_df(df: pd.DataFrame):
-    save_common_df("일정", df[["등록일시", "작성자", "사업", "일정명", "날짜"]].copy())
+    save_df = df.copy()
+
+    save_df["업무내용"] = save_df.get("일정명", "")
+    save_df["담당자"] = save_df.get("작성자", "")
+    save_df["상태"] = save_df.get("상태", "")
+    save_df["메모"] = save_df.get("사업", "")
+    save_df["날짜"] = save_df.get("날짜", "")  # ✅ 추가
+
+    save_work_schedule_data(
+        save_df[["날짜", "업무내용", "담당자", "상태", "메모"]].copy()
+    )
 
 
 def load_tax_alert_df():
@@ -2221,6 +2244,54 @@ def save_schedule_data(df, sheet=None):
         sheet.update(clear_range, empty_values)
 
     load_schedule_data.clear()
+
+# =========================================================
+# 업무일정 구글시트 load/save
+# =========================================================
+def load_work_schedule_data():
+    try:
+        sh = get_google_sheet()
+        ws = sh.worksheet(WORK_SCHEDULE_SHEET_NAME)
+
+        records = ws.get_all_records()
+        df = pd.DataFrame(records)
+
+        if df.empty:
+            df = pd.DataFrame(columns=WORK_SCHEDULE_COLUMNS)
+
+        for col in WORK_SCHEDULE_COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
+
+        return df[WORK_SCHEDULE_COLUMNS].copy()
+
+    except Exception as e:
+        st.warning(f"업무일정 구글시트 불러오기 실패: {e}")
+        return pd.DataFrame(columns=WORK_SCHEDULE_COLUMNS)
+
+
+def save_work_schedule_data(df):
+    try:
+        sh = get_google_sheet()
+        ws = sh.worksheet(WORK_SCHEDULE_SHEET_NAME)
+
+        save_df = df.copy()
+
+        for col in WORK_SCHEDULE_COLUMNS:
+            if col not in save_df.columns:
+                save_df[col] = ""
+
+        save_df = save_df[WORK_SCHEDULE_COLUMNS].fillna("")
+
+        ws.clear()
+        ws.update([WORK_SCHEDULE_COLUMNS] + save_df.values.tolist())
+
+        return True
+
+    except Exception as e:
+        st.error(f"업무일정 구글시트 저장 실패: {e}")
+        return False
+
 
 SCHEDULE_LOG_COLUMNS = ["시간", "사용자", "사업", "작업", "설치현장", "시공담당", "비고"]
 
@@ -4425,7 +4496,8 @@ def inspection_page():
 
                     save_df = df[INSPECTION_COLUMNS].copy() if not df.empty else pd.DataFrame(columns=INSPECTION_COLUMNS)
                     save_df = pd.concat([save_df, new_row], ignore_index=True)
-                    save_inspection_data(full_df)
+                    save_df = pd.concat([save_df, new_row], ignore_index=True)
+                    save_inspection_data(save_df)   
 
                     set_inspection_flash("실사 요청이 등록되었습니다.", "success")
                     st.session_state.inspection_form_version += 1
