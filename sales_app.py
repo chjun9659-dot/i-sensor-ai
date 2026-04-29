@@ -4184,13 +4184,6 @@ def inspection_page():
 
     # ✅ 사업 선택에 따라 실사 데이터 분리
     df = apply_product_filter(df)
-    # ✅ 화면 표시용 중복 제거
-    dedup_keys = ["요청일", "상품구분", "현장명", "현장주소", "영업담당자"]
-
-    existing_keys = [c for c in dedup_keys if c in df.columns]
-
-    if existing_keys:
-        df = df.drop_duplicates(subset=existing_keys, keep="first").copy()
 
     df = df.reset_index(drop=True)
     df["row_id"] = df.index
