@@ -128,7 +128,7 @@ WORK_SCHEDULE_SHEET_NAME = "업무일정"
 WORK_SCHEDULE_COLUMNS = ["날짜", "업무내용", "담당자", "상태", "메모"]
 
 TODAY_TASK_SHEET_NAME = "오늘할일"
-TODAY_TASK_COLUMNS = ["등록일시", "작성자", "사업", "할일"]
+TODAY_TASK_COLUMNS = ["등록일시", "작성자", "사업", "할일", "상태"]
 
 def load_today_tasks():
     try:
@@ -889,10 +889,10 @@ def init_files():
 
 def load_tasks_df():
     df = load_today_tasks()
-    for col in ["등록일시", "작성자", "사업", "할일"]:
+    for col in ["등록일시", "작성자", "사업", "할일", "상태"]:
         if col not in df.columns:
             df[col] = ""
-    return df[["등록일시", "작성자", "사업", "할일"]].copy()
+    return df[["등록일시", "작성자", "사업", "할일", "상태"]].copy()
 
 
 def save_tasks_df(df: pd.DataFrame):
