@@ -5785,29 +5785,22 @@ def maintenance_page():
                     # =========================
                     full_df = load_maintenance_data()
 
-                    # ✅ 안전장치: 원본 데이터가 비어 있으면 저장 중단
+                    # ✅ 안전장치
                     if full_df is None or full_df.empty:
                         st.error("원본 유지보수 데이터가 비어 있습니다. 저장을 중단합니다.")
                         st.stop()
 
+                    # ✅ 컬럼 보정
                     for col in MAINTENANCE_COLUMNS:
                         if col not in full_df.columns:
                             full_df[col] = ""
 
                     full_df = full_df[MAINTENANCE_COLUMNS].copy()
 
+                    # ✅ 데이터 추가 (딱 1번)
                     save_df = pd.concat([full_df, new_row], ignore_index=True)
 
-                    save_maintenance_data(save_df)
-
-                    for col in MAINTENANCE_COLUMNS:
-                        if col not in full_df.columns:
-                            full_df[col] = ""
-
-                    full_df = full_df[MAINTENANCE_COLUMNS].copy()
-
-                    save_df = pd.concat([full_df, new_row], ignore_index=True)
-
+                    # ✅ 저장 (딱 1번)
                     save_maintenance_data(save_df)
 
                     st.success("유지보수 계약 등록 완료!")
