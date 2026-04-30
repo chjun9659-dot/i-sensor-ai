@@ -6922,18 +6922,19 @@ def page_schedule():
     else:
         st.info("날짜 컬럼이 없어 달력을 표시할 수 없습니다.")
 
-    if view_df.empty:
-        st.info("등록된 일정이 없습니다.")
-    else:
-        temp_df = view_df.copy()
-        temp_df["날짜정렬"] = pd.to_datetime(temp_df["날짜"], errors="coerce")
-        temp_df = temp_df.sort_values(["날짜정렬", "등록일시"], ascending=[True, False]).drop(columns=["날짜정렬"])
-        st.dataframe(temp_df, use_container_width=True, hide_index=True)
+    with st.expander(f"📋 일정 상세 목록 / 삭제 ({len(view_df)}건)", expanded=False):
+        if view_df.empty:
+            st.info("등록된 일정이 없습니다.")
+        else:
+            temp_df = view_df.copy()
+            temp_df["날짜정렬"] = pd.to_datetime(temp_df["날짜"], errors="coerce")
+            temp_df = temp_df.sort_values(["날짜정렬", "등록일시"], ascending=[True, False]).drop(columns=["날짜정렬"])
 
-        # =========================
-        # 일정 삭제 기능
-        # =========================
-        if not view_df.empty:
+            st.dataframe(temp_df, use_container_width=True, hide_index=True)
+
+            # =========================
+            # 일정 삭제 기능
+            # =========================
             delete_options = [
                 f"{idx} | {row['날짜']} | {row['일정명']} | {row['작성자']}"
                 for idx, row in view_df.iterrows()
@@ -6952,7 +6953,7 @@ def page_schedule():
                 save_schedule_df(df)
 
                 st.cache_data.clear()
-                st.success("일정 삭제 완료")
+                st.success("삭제 완료")
                 st.rerun()
 
 def page_alerts():
@@ -7055,15 +7056,26 @@ def page_alerts():
             st.rerun()
 
     st.subheader("입대의 알림 목록")
-    if view_meeting_df.empty:
-        st.info("등록된 입대의 알림이 없습니다.")
-    else:
-        view_meeting = view_meeting_df.copy()
-        view_meeting["입대의일자_dt"] = pd.to_datetime(view_meeting["입대의일자"], errors="coerce")
-        view_meeting["D-Day"] = view_meeting["입대의일자_dt"].apply(get_d_day_label)
-        view_meeting["상태표시"] = view_meeting.apply(lambda r: make_alert_status(r["입대의일자_dt"], r["상태"]), axis=1)
-        view_meeting = view_meeting.sort_values(["입대의일자_dt", "등록일시"], ascending=[True, False])
-        show_alert_table(view_meeting[["단지명", "입대의일자", "D-Day", "상태", "상태표시", "비고", "작성자"]])
+
+    with st.expander(f"📋 상세 보기 ({len(view_meeting_df)}건)", expanded=False):
+
+        if view_meeting_df.empty:
+            st.info("등록된 입대의 알림이 없습니다.")
+        else:
+            view_meeting = view_meeting_df.copy()
+            view_meeting["입대의일자_dt"] = pd.to_datetime(view_meeting["입대의일자"], errors="coerce")
+            view_meeting["D-Day"] = view_meeting["입대의일자_dt"].apply(get_d_day_label)
+            view_meeting["상태표시"] = view_meeting.apply(
+                lambda r: make_alert_status(r["입대의일자_dt"], r["상태"]), axis=1
+            )
+
+            view_meeting = view_meeting.sort_values(
+                ["입대의일자_dt", "등록일시"], ascending=[True, False]
+            )
+
+            show_alert_table(
+                view_meeting[["단지명", "입대의일자", "D-Day", "상태", "상태표시", "비고", "작성자"]]
+            )
 
 
 def page_admin_tools():
