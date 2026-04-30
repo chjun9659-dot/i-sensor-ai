@@ -123,7 +123,7 @@ USER_SHEET_URL = "https://docs.google.com/spreadsheets/d/1uUjrdRwTjdvKoED1dWKsik
 # =========================================================
 # 업무일정 구글시트
 WORK_SCHEDULE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1OfYbKceuwIcCqhGjDxT0nevQXSkNH7muwsKZOPiMHZs/edit?gid=0#gid=0"
-
+NOTICE_SHEET_URL = "https://docs.google.com/spreadsheets/d/18D9HWhSzuf9Mfo4lPqD36nMsfYynjWUmyIuW4w7H0Sc/edit?gid=0#gid=0"
 WORK_SCHEDULE_SHEET_NAME = "업무일정"
 WORK_SCHEDULE_COLUMNS = ["날짜", "업무내용", "담당자", "상태", "메모"]
 
@@ -153,6 +153,21 @@ def load_today_tasks():
         st.warning(f"오늘할일 불러오기 실패: {e}")
         return pd.DataFrame(columns=TODAY_TASK_COLUMNS)
 
+def load_notice():
+    try:
+        client = get_gsheet_client()
+        spreadsheet = client.open_by_url(NOTICE_SHEET_URL)
+        ws = spreadsheet.worksheet("공지사항")
+
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+
+        return df
+
+    except Exception as e:
+        st.warning(f"공지사항 불러오기 실패: {e}")
+        return pd.DataFrame(columns=["작성일", "내용", "작성자"])
+    
 def save_today_tasks(df):
     try:
         client = get_gsheet_client()
@@ -6332,6 +6347,86 @@ def generate_monthly_claim_rows(contract_df, payment_df, target_year, target_mon
 
     return pd.DataFrame(new_rows)   
 
+# =========================================================
+# 시스템 점검
+# =========================================================
+def system_check_page():
+    st.title("🛠️ 시스템 점검")
+    st.caption("읽기 전용 점검 화면입니다. 저장/삭제는 하지 않습니다.")
+
+    if st.session_state.get("role") != "관리자":
+        st.warning("관리자만 접근할 수 있습니다.")
+        return
+
+    st.subheader("1. 기본 상태")
+
+    try:
+        client = get_gsheet_client()
+        st.success("✅ 구글 인증 연결 정상")
+    except Exception as e:
+        st.error(f"❌ 구글 인증 실패: {e}")
+        return
+
+    st.divider()
+
+    st.subheader("2. 주요 데이터 점검")
+
+    check_targets = []
+
+    for business_name, config in BUSINESS_CONFIG.items():
+        for sheet_name, url in config.get("sheets", {}).items():
+            check_targets.append({
+                "사업": business_name,
+                "시트명": sheet_name,
+                "URL": url
+            })
+
+    result_rows = []
+
+    for item in check_targets:
+        business_name = item["사업"]
+        sheet_name = item["시트명"]
+        url = item["URL"]
+
+        try:
+            df = load_google_sheet_data(business_name, sheet_name, url)
+
+            row_count = len(df)
+            col_count = len(df.columns)
+            blank_cols = [c for c in df.columns if str(c).strip() == "" or str(c).startswith("빈컬럼")]
+            dup_cols = df.columns[df.columns.duplicated()].tolist()
+
+            result_rows.append({
+                "사업": business_name,
+                "시트명": sheet_name,
+                "행수": row_count,
+                "컬럼수": col_count,
+                "빈컬럼": ", ".join(map(str, blank_cols)) if blank_cols else "",
+                "중복컬럼": ", ".join(map(str, dup_cols)) if dup_cols else "",
+                "상태": "정상"
+            })
+
+        except Exception as e:
+            result_rows.append({
+                "사업": business_name,
+                "시트명": sheet_name,
+                "행수": "",
+                "컬럼수": "",
+                "빈컬럼": "",
+                "중복컬럼": "",
+                "상태": f"오류: {e}"
+            })
+
+    result_df = pd.DataFrame(result_rows)
+    st.dataframe(result_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    st.subheader("3. 캐시 관리")
+
+    if st.button("🔄 캐시 초기화", key="system_cache_clear_btn"):
+        st.cache_data.clear()
+        st.success("캐시 초기화 완료")
 
 # =========================================================
 # 페이지들
@@ -6341,6 +6436,120 @@ def page_dashboard():
     render_common_style()
     st.title("📊 통합 대시보드")
     st.caption("영업 / 계약 / 시공 / 실사 / 유지보수 / 연차 / 오늘 할 일을 한 화면에서 확인합니다.")
+    notice_df = load_notice() 
+
+    if not notice_df.empty:
+        notice_df = notice_df.fillna("")
+        notice_df = notice_df[notice_df["내용"].astype(str).str.strip() != ""].copy()
+
+        if not notice_df.empty:
+            recent_notice_df = notice_df.tail(3).iloc[::-1].reset_index(drop=True)
+
+            for _, row in recent_notice_df.iterrows():
+                st.markdown(f"""
+                <div style="
+                    background:#fff7ed;
+                    border:1px solid #fed7aa;
+                    border-left:6px solid #f97316;
+                    border-radius:12px;
+                    padding:14px 18px;
+                    margin:10px 0 12px 0;
+                    font-size:15px;
+                    font-weight:600;
+                    color:#7c2d12;
+                ">
+                📢 공지사항: {row['내용']}
+                <div style="font-size:12px; font-weight:400; color:#9a3412; margin-top:6px;">
+                    {row.get('작성일', '')} / {row.get('작성자', '')}
+                </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # 👇 관리자만 공지 등록 가능
+    if st.session_state.get("role") == "관리자":
+        with st.expander("📢 공지 등록", expanded=False):
+            notice_text = st.text_input("공지 내용 입력", key="notice_input")
+
+            if st.button("공지 등록", key="notice_save_btn"):
+                if notice_text.strip() == "":
+                    st.warning("공지 내용을 입력하세요")
+                else:
+                    try:
+                        client = get_gsheet_client()
+                        spreadsheet = client.open_by_url(NOTICE_SHEET_URL)
+                        ws = spreadsheet.worksheet("공지사항")
+
+                        ws.append_row([
+                            datetime.now().strftime("%Y-%m-%d"),
+                            notice_text,
+                            st.session_state.get("display_name", st.session_state.get("username"))
+                        ])
+
+                        st.success("공지 등록 완료!")
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"공지 등록 실패: {e}")
+
+            st.divider()
+            st.markdown("#### 🗑️ 공지 삭제")
+
+            notice_delete_df = load_notice().fillna("")
+
+            if notice_delete_df.empty:
+                st.info("삭제할 공지가 없습니다.")
+            else:
+                notice_delete_df = notice_delete_df.reset_index(drop=True)
+
+                delete_options = [
+                    f"{idx} | {row.get('작성일', '')} | {row.get('내용', '')}"
+                    for idx, row in notice_delete_df.iterrows()
+                    if str(row.get("내용", "")).strip() != ""
+                ]
+
+                if delete_options:
+                    selected_delete_notice = st.selectbox(
+                        "삭제할 공지 선택",
+                        delete_options,
+                        key="notice_delete_select"
+                    )
+
+                    confirm_notice_delete = st.checkbox(
+                        "정말 이 공지를 삭제합니다.",
+                        key="notice_delete_confirm"
+                    )
+
+                    if st.button("선택 공지 삭제", key="notice_delete_btn"):
+                        if not confirm_notice_delete:
+                            st.warning("삭제 확인 체크를 먼저 해주세요.")
+                        else:
+                            delete_idx = int(selected_delete_notice.split("|")[0].strip())
+
+                            try:
+                                client = get_gsheet_client()
+                                spreadsheet = client.open_by_url(NOTICE_SHEET_URL)
+                                ws = spreadsheet.worksheet("공지사항")
+
+                                save_df = notice_delete_df.drop(index=delete_idx).reset_index(drop=True)
+
+                                for col in ["작성일", "내용", "작성자"]:
+                                    if col not in save_df.columns:
+                                        save_df[col] = ""
+
+                                save_df = save_df[["작성일", "내용", "작성자"]].fillna("")
+
+                                ws.clear()
+                                ws.update(
+                                    [["작성일", "내용", "작성자"]] + save_df.values.tolist()
+                                )
+
+                                st.success("공지 삭제 완료!")
+                                st.rerun()
+
+                            except Exception as e:
+                                st.error(f"공지 삭제 실패: {e}")
+                else:
+                    st.info("삭제할 공지가 없습니다.")              
 
     today = date.today()
     today_str = str(today)
@@ -6745,7 +6954,6 @@ def generic_data_page(title, key, filters_config, search_key):
     st.write(f"조회 건수: {len(df2)}건")
     styled_dataframe(df2)
     download_section(f"{title}_필터결과", df2, title)
-
 
 def page_tasks():
     st.title("📝 오늘 할 일")
@@ -7803,7 +8011,7 @@ def main():
     if st.session_state.business == "아이센서":
 
         menu_groups = {
-            "📊 통합": ["대시보드"],
+            "📊 통합": ["대시보드", "시스템 점검"],
             "📁 영업관리": [
                 "영업현황",
                 "가능단지",
@@ -7879,6 +8087,9 @@ def main():
 
     if menu == "대시보드":
         page_dashboard()
+
+    elif menu == "시스템 점검":
+        system_check_page()    
 
     elif menu == "데이터 가져오기":
         page_import()
