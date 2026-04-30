@@ -2195,20 +2195,34 @@ def ensure_schedule_sheet_header(sheet):
         sheet.update("A1:H1", [EXPECTED_COLUMNS])
         return
 
-    header = values[0]
+    old_header = [str(x).strip() for x in values[0]]
+    rows = values[1:]
 
-    if header != EXPECTED_COLUMNS:
-        # 👉 기존 데이터 유지하면서 컬럼만 맞춤
-        df = pd.DataFrame(values[1:], columns=header)
+    # 이미 정상 구조면 종료
+    if old_header == EXPECTED_COLUMNS:
+        return
 
-        for col in EXPECTED_COLUMNS:
-            if col not in df.columns:
-                df[col] = ""
+    # 기존 데이터 유지하면서 재정렬
+    old_df = pd.DataFrame(rows, columns=old_header)
 
-        df = df[EXPECTED_COLUMNS]
+    # 상품구분 없으면 기본값
+    if "상품구분" not in old_df.columns:
+        old_df["상품구분"] = "아이센서"
 
-        # 👉 헤더만 수정 (데이터 유지)
-        sheet.update("A1:H1", [EXPECTED_COLUMNS])
+    # 컬럼 맞추기
+    for col in EXPECTED_COLUMNS:
+        if col not in old_df.columns:
+            old_df[col] = ""
+
+    save_df = old_df[EXPECTED_COLUMNS].copy().fillna("")
+
+    # 전체 다시 쓰기 (핵심)
+    sheet.clear()
+    sheet.update(
+        "A1",
+        [EXPECTED_COLUMNS] + save_df.astype(str).values.tolist(),
+        value_input_option="USER_ENTERED"
+    )
 
 @st.cache_data(ttl=60)
 def load_schedule_data():
