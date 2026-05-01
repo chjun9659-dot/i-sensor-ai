@@ -808,7 +808,7 @@ def force_fix_quantity_column(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame
     return df
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.DataFrame:
     if not url or "여기에_" in url:
         return pd.DataFrame()
@@ -2172,7 +2172,7 @@ def save_vacation_data(df):
         empty_rows = [[""] * len(headers) for _ in range(blank_rows)]
         worksheet.update(f"A{clear_start}", empty_rows)
 
-    st.cache_data.clear()
+    load_google_sheet_data.clear() 
 
 # =========================================================
 # 시공 일정 시스템
@@ -2239,7 +2239,7 @@ def ensure_schedule_sheet_header(sheet):
         value_input_option="USER_ENTERED"
     )
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_schedule_data():
     sheet = get_schedule_sheet()
     ensure_schedule_sheet_header(sheet)
@@ -2845,7 +2845,7 @@ def vacation_page():
         if vacation_changed:
             backup_file = create_backup()
             save_vacation_data(df)
-            st.cache_data.clear()
+            load_google_sheet_data.clear()
             st.info(
                 f"기산기간이 지난 직원 연차가 자동 갱신되었습니다: "
                 f"{', '.join(changed_names)} / 백업: {backup_file}"
@@ -2897,7 +2897,7 @@ def vacation_page():
                 else:
                     df = recalculate_all_vacation_data(df)
                     save_vacation_data(df)
-                    st.cache_data.clear()
+                    load_google_sheet_data.clear()
                     st.success("전체 재계산 완료")
                     st.rerun()
 
@@ -3032,7 +3032,7 @@ def vacation_page():
                 reason="",
                 note="선택 직원 연차 다시 계산"
             )
-            st.cache_data.clear()
+            load_google_sheet_data.clear()
             st.success(f"{selected_name} 연차가 다시 계산되었습니다.")
             st.rerun()
 
@@ -3120,7 +3120,7 @@ def vacation_page():
                             note="연차 사용 등록"
                         )
 
-                        st.cache_data.clear()
+                        load_google_sheet_data.clear()
                         st.success("연차 등록 완료!")
                         st.rerun()
 
@@ -3213,7 +3213,7 @@ def vacation_page():
                         note="선택 사용일 취소"
                     )
 
-                    st.cache_data.clear()
+                    load_google_sheet_data.clear()
                     st.success("연차 취소 완료!")
                     st.rerun()
             else:
@@ -3277,7 +3277,7 @@ def vacation_page():
                         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
                         save_vacation_data(df)
-                        st.cache_data.clear()
+                        load_google_sheet_data.clear()
                         st.success("직원 추가 완료!")
                         st.rerun()
 
@@ -3363,7 +3363,7 @@ def vacation_page():
                                 df.iat[row_pos, service_col_pos] = int(service_years)
 
                                 save_vacation_data(df)
-                                st.cache_data.clear()
+                                load_google_sheet_data.clear()
                                 st.success("직원 정보 수정 완료!")
                                 st.rerun()
 
@@ -3385,7 +3385,7 @@ def vacation_page():
                         st.error("삭제할 직원을 찾지 못했습니다.")
                     else:
                         save_vacation_data(df)
-                        st.cache_data.clear()
+                        load_google_sheet_data.clear()
                         st.success(f"{delete_name} 직원 삭제 완료!")
                         st.rerun()
 
@@ -3886,7 +3886,7 @@ def vehicle_page():
 
         if st.button("💾 차량관리 저장", use_container_width=True):
             if save_df_to_sheet(VEHICLE_SHEET_NAME, edited_vehicle_df, VEHICLE_COLUMNS):
-                st.cache_data.clear()
+                load_sheet_as_df.clear()
                 st.success("차량관리 저장 완료!")
                 st.rerun()
 
@@ -3948,7 +3948,7 @@ def vehicle_page():
                     save_df = pd.concat([repair_df, new_row], ignore_index=True)
 
                     if save_df_to_sheet(VEHICLE_REPAIR_SHEET_NAME, save_df, REPAIR_COLUMNS):
-                        st.cache_data.clear()
+                        load_sheet_as_df.clear()
                         st.success("정비이력 등록 완료!")
                         st.rerun()
 
@@ -3979,7 +3979,7 @@ def vehicle_page():
             else:
                 if st.button("💾 정비이력 저장", use_container_width=True):
                     if save_df_to_sheet(VEHICLE_REPAIR_SHEET_NAME, edited_repair_df, REPAIR_COLUMNS):
-                        st.cache_data.clear()
+                        load_sheet_as_df.clear()
                         st.success("정비이력 저장 완료!")
                         st.rerun()
 
@@ -4030,7 +4030,7 @@ def vehicle_page():
                         save_df = save_df.drop(index=delete_idx).reset_index(drop=True)
 
                         if save_df_to_sheet(VEHICLE_REPAIR_SHEET_NAME, save_df, REPAIR_COLUMNS):
-                            st.cache_data.clear()
+                            load_sheet_as_df.clear()
                             st.success("정비이력이 삭제되었습니다.")
                             st.rerun()
 
@@ -4087,7 +4087,7 @@ def vehicle_page():
         else:
             st.success("보험 만료 임박 차량이 없습니다.")
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_inspection_data():
     try:
         sheet = get_inspection_sheet()
@@ -4204,10 +4204,25 @@ def save_inspection_data(df, sheet=None):
     if len(rows) <= 1:
         raise Exception("실사 데이터 행이 없어 저장을 중단했습니다.")
 
-    # 절대 먼저 clear 하지 않음
+    old_values = sheet.get_all_values()
+    old_data_rows = max(0, len(old_values) - 1)
+
     sheet.update("A1", rows, value_input_option="USER_ENTERED")
 
-    st.cache_data.clear()   
+    new_data_rows = len(save_df)
+
+    if old_data_rows > new_data_rows:
+        blank_rows = old_data_rows - new_data_rows
+        start_row = new_data_rows + 2
+        end_row = old_data_rows + 1
+
+        # 실사 컬럼은 29개라 AC열까지
+        clear_range = f"A{start_row}:AC{end_row}"
+        empty_values = [[""] * len(INSPECTION_COLUMNS) for _ in range(blank_rows)]
+
+        sheet.update(clear_range, empty_values, value_input_option="USER_ENTERED")
+
+    load_inspection_data.clear()
 
 
 def render_inspection_common_style():
@@ -4775,7 +4790,7 @@ def inspection_page():
                     full_df.loc[original_idx, "진행상태"] = inspect_status
 
                     save_inspection_data(full_df)
-                    st.cache_data.clear()
+                    load_inspection_data.clear()
 
                     set_inspection_flash("담당자 배정 및 일정 저장 완료!", "success")
                     st.rerun()
@@ -4797,8 +4812,7 @@ def inspection_page():
                     full_df.loc[original_idx, "진행상태"] = "요청접수"
 
                     save_inspection_data(full_df)
-                    st.cache_data.clear()
-
+                    load_inspection_data.clear()
                     set_inspection_flash("담당자 배정이 삭제되었습니다.", "success")
                     st.rerun()
 
@@ -5466,7 +5480,7 @@ def calculate_total_contract_amount(qty, unit_price):
     return int(maintenance_safe_int(qty, 0) * maintenance_safe_float(unit_price, 0))
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_maintenance_data():
     sheet = get_maintenance_sheet()
     ensure_maintenance_sheet_header(sheet)
@@ -5532,7 +5546,7 @@ def save_maintenance_data(df, sheet=None):
         empty_values = [[""] * total_cols for _ in range(blank_rows)]
         sheet.update(clear_range, empty_values)
 
-    st.cache_data.clear()
+    load_maintenance_data.clear()
 
 MAINTENANCE_PAYMENT_SHEET_NAME = "아이센서유지보수_수금관리"
 
@@ -5577,7 +5591,7 @@ def ensure_maintenance_payment_sheet_header(sheet):
         save_maintenance_payment_data(existing, sheet=sheet)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_maintenance_payment_data():
     sheet = get_maintenance_payment_sheet()
     ensure_maintenance_payment_sheet_header(sheet)
@@ -5642,7 +5656,7 @@ def save_maintenance_payment_data(df, sheet=None):
         empty_values = [[""] * len(MAINTENANCE_PAYMENT_COLUMNS) for _ in range(blank_rows)]
         sheet.update(clear_range, empty_values)
 
-    st.cache_data.clear()
+    load_maintenance_payment_data.clear()
 
 def maintenance_page():
     render_inspection_common_style()
@@ -6558,11 +6572,10 @@ def page_dashboard():
     # 1. 기본 데이터 불러오기
     # =========================
     try:
-        sales_df = apply_role_filter(load_df("영업현황")) if st.session_state.business == "아이센서" else pd.DataFrame()
-        possible_df = apply_role_filter(load_df("가능단지")) if st.session_state.business == "아이센서" else pd.DataFrame()
-        bid_df = apply_role_filter(load_df("입찰공고")) if st.session_state.business == "아이센서" else pd.DataFrame()
-        contract_df = apply_role_filter(load_df("계약단지")) if st.session_state.business == "아이센서" else apply_role_filter(load_df("계약접수현황"))
-
+        sales_df = pd.DataFrame()
+        possible_df = pd.DataFrame()
+        bid_df = pd.DataFrame()
+        contract_df = pd.DataFrame()
         task_df = apply_author_filter(load_tasks_df())
         schedule_common_df = apply_author_filter(load_schedule_df())
 
@@ -6570,12 +6583,20 @@ def page_dashboard():
         st.error(f"대시보드 기본 데이터를 불러오지 못했습니다: {e}")
         return
 
+    # KPI용 최소 데이터만 로딩
+    try:
+        sales_df = apply_role_filter(load_df("영업현황")) if st.session_state.business == "아이센서" else pd.DataFrame()
+        contract_df = apply_role_filter(load_df("계약단지")) if st.session_state.business == "아이센서" else apply_role_filter(load_df("계약접수현황"))
+    except:
+        sales_df = pd.DataFrame()
+        contract_df = pd.DataFrame()
+
     # =========================
     # 2. 상단 핵심 KPI
     # =========================
     st.subheader("📌 핵심 현황")
 
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3 = st.columns(3)
 
     with k1:
         ui_card("영업현황", len(sales_df) if not sales_df.empty else 0, "전체 영업 데이터", "info")
@@ -6584,12 +6605,6 @@ def page_dashboard():
         ui_card("계약/접수", len(contract_df) if not contract_df.empty else 0, "계약·접수 현황", "success")
 
     with k3:
-        ui_card("가능단지", len(possible_df) if not possible_df.empty else 0, "가능 단지 수", "info")
-
-    with k4:
-        ui_card("입찰공고", len(bid_df) if not bid_df.empty else 0, "입찰 공고 수", "warning")
-
-    with k5:
         ui_card("오늘 할 일", len(task_df) if not task_df.empty else 0, "등록된 할 일", "danger")
 
     st.divider()
@@ -7003,7 +7018,7 @@ def page_tasks():
                 df = df.drop(index=delete_idx).reset_index(drop=True)
                 save_tasks_df(df)
 
-                st.cache_data.clear()
+                load_tasks_df.clear()
                 st.success("삭제 완료")
                 st.rerun()
 
@@ -7174,7 +7189,7 @@ def page_schedule():
                 df = df.drop(index=delete_idx).reset_index(drop=True)
                 save_schedule_df(df)
 
-                st.cache_data.clear()
+                # st.cache_data.clear()
                 st.success("삭제 완료")
                 st.rerun()
 
