@@ -8,107 +8,9 @@ import streamlit as st
 from openpyxl import load_workbook
 import calendar
 import streamlit.components.v1 as components
-# 👇 여기 추가 (이 위치가 핵심)
-def render_common_style():
-    st.markdown("""               
-    <style>
-    .main {
-        background-color: #f1f5f9 !important;
-    }
-    .yw-card {
-        background: #ffffff;
-        border-radius: 14px;
-        padding: 16px;
-        border: 1px solid #e2e8f0;
-
-        /* 🔥 여기 핵심 */
-        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-
-        border-left: 5px solid transparent;
-        min-height: 80px;
-        margin-bottom: 8px;
-        transition: all 0.2s ease;
-    }
-
-    /* 카드 hover */
-    .yw-card:hover {
-        transform: translateY(-4px) scale(1.01);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.12);
-    }
-
-    /* expander hover */
-    div[data-testid="stExpander"] {
-        border-radius: 12px;
-        transition: all 0.2s ease;
-    }
-
-    div[data-testid="stExpander"] > div {
-        background: #ffffff;
-        border-radius: 12px;
-    }
-
-    /* 클릭 느낌 */
-    div[data-testid="stExpanderHeader"] {
-        cursor: pointer;
-    }
-                
-    /* Streamlit metric 카드 hover */
-    div[data-testid="stMetric"] {
-        background: #ffffff !important;
-        border-radius: 14px !important;
-        border: 1px solid #e2e8f0 !important;
-        padding: 14px !important;
-        transition: all 0.2s ease !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
-    }
-
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-4px) scale(1.01);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.12) !important;
-    }
-
-    /* 컬러 라인 */
-    .yw-card.success { border-left-color: #16a34a; }
-    .yw-card.warning { border-left-color: #f59e0b; }
-    .yw-card.danger  { border-left-color: #ef4444; }
-    .yw-card.info    { border-left-color: #2563eb; }
-
-    /* 제목 */
-    .card-title {
-        font-size: 13px;
-        font-weight: 700;
-        color: #64748b;
-        margin-bottom: 3px;
-    }
-
-    /* 숫자 */
-    .card-value {
-        font-size: 24px;
-        font-weight: 800;
-        color: #0f172a;
-        line-height: 1.2;
-    }
-
-    /* 설명 */
-    .card-sub {
-        font-size: 11px;
-        color: #94a3b8;
-        margin-top: 3px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-def ui_card(title, value, sub="", status=""):
-    st.markdown(f"""
-    <div class="yw-card {status}">
-        <div class="card-title">{title}</div>
-        <div class="card-value">{value}</div>
-        <div class="card-sub">{sub}</div>
-    </div>
-    """, unsafe_allow_html=True)
+from modules.ui_common import render_common_style, ui_card
 
 st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
-
 # =========================================================
 # 기본 설정
 # =========================================================
@@ -8026,6 +7928,8 @@ def logout():
 # 메인
 # =========================================================
 def main():
+    render_common_style()   
+    render_header() 
     init_files()
 
     st.sidebar.title("메뉴")
