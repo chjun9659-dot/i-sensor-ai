@@ -1540,28 +1540,17 @@ def download_section(title, df, file_name):
 # 로고/헤더
 # =========================================================
 def render_header():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = os.path.join(base_dir, "logo.png")
+
     col1, col2 = st.columns([1, 5])
 
     with col1:
-        if os.path.exists("logo.png"):
-            st.image("logo.png", width=100)
+        if os.path.exists(logo_path):
+            st.image(logo_path, width=100)
 
     with col2:
-        st.markdown("""
-        <style>
-        div[data-testid="stMetricValue"] {
-            font-size: 22px !important;
-        }
-
-        div[data-testid="stMetricLabel"] {
-            font-size: 14px !important;
-        }
-
-        h1, h2, h3 {
-            font-size: 22px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        st.markdown("## ")  # 필요하면 제목
 
     st.divider()
 
@@ -7956,8 +7945,6 @@ def main():
         st.session_state["sidebar_menu_group"] = "📊 통합"
         st.session_state["sidebar_menu_item"] = "대시보드"
         st.rerun()
-
-    render_header()
 
     # =====================================================
     # 사이드바 메뉴 그룹화
