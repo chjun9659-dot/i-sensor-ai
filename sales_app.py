@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 from openpyxl import load_workbook
 import calendar
+import streamlit.components.v1 as components
 # 👇 여기 추가 (이 위치가 핵심)
 def render_common_style():
     st.markdown("""               
@@ -130,6 +131,7 @@ WORK_SCHEDULE_COLUMNS = ["날짜", "업무내용", "담당자", "상태", "메�
 TODAY_TASK_SHEET_NAME = "오늘할일"
 TODAY_TASK_COLUMNS = ["등록일시", "작성자", "사업", "할일", "상태"]
 
+@st.cache_data(ttl=300)
 def load_today_tasks():
     try:
         client = get_gsheet_client()
@@ -153,6 +155,7 @@ def load_today_tasks():
         st.warning(f"오늘할일 불러오기 실패: {e}")
         return pd.DataFrame(columns=TODAY_TASK_COLUMNS)
 
+@st.cache_data(ttl=300)
 def load_notice():
     try:
         client = get_gsheet_client()
@@ -180,8 +183,10 @@ def save_today_tasks(df):
         ws.clear()
         ws.update([TODAY_TASK_COLUMNS] + save_df.values.tolist())
 
+        load_today_tasks.clear()
+
     except Exception as e:
-        st.error(f"오늘할일 저장 실패: {e}")  
+        st.error(f"오늘할일 저장 실패: {e}") 
 
 def load_users_from_gsheet():
     """
@@ -2321,6 +2326,7 @@ def save_schedule_data(df, sheet=None):
 # =========================================================
 # 업무일정 구글시트 load/save
 # =========================================================
+@st.cache_data(ttl=300)
 def load_work_schedule_data():
     try:
         client = get_gsheet_client()
@@ -7018,16 +7024,33 @@ def page_tasks():
                 df = df.drop(index=delete_idx).reset_index(drop=True)
                 save_tasks_df(df)
 
-                load_tasks_df.clear()
+                st.cache_data.clear()
                 st.success("삭제 완료")
                 st.rerun()
 
 def page_schedule():
-    st.title("📅 일정 관리")
+    st.title("🗓️ 일정 관리")
+
+    if st.button("🔄 일정 새로고침"):
+        st.cache_data.clear()
+        st.rerun()
+
     df = load_schedule_df()
 
-    title = st.text_input("일정 제목")
-    selected_date = st.date_input("날짜")
+    title = st.text_input("일정 제목", key="schedule_title")
+
+    # 먼저 기본값 세팅
+    if "schedule_date" not in st.session_state:
+        st.session_state.schedule_date = date.today()
+
+    # 그 다음 query 반영
+    query_params = st.query_params
+    if "date" in query_params:
+        st.session_state.schedule_date = pd.to_datetime(query_params["date"]).date()
+        st.query_params.clear() 
+
+    # 마지막에 input
+    selected_date = st.date_input("날짜", key="schedule_date")
 
     if st.button("일정 추가"):
         if title.strip():
@@ -7036,10 +7059,11 @@ def page_schedule():
                 "작성자": current_user_name(),
                 "사업": st.session_state.business,
                 "일정명": title.strip(),
-                "날짜": str(selected_date),
+                "날짜": selected_date.strftime("%Y-%m-%d"),
             }
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             save_schedule_df(df)
+            st.cache_data.clear()
             st.success("일정 추가 완료")
             st.rerun()
 
@@ -7069,7 +7093,7 @@ def page_schedule():
             key="personal_schedule_calendar_month"
         )
 
-    calendar_df = df.copy()
+    calendar_df = view_df.copy()
 
     if "날짜" in calendar_df.columns:
         calendar_df["날짜"] = pd.to_datetime(calendar_df["날짜"], errors="coerce")
@@ -7095,38 +7119,38 @@ def page_schedule():
         cal = calendar.Calendar(firstweekday=6)
         month_days = cal.monthdayscalendar(int(cal_year), int(cal_month))
 
-        html = """
+        html = f"""
         <style>
-        .calendar-table {
+        .calendar-table {{
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
-        }
-        .calendar-table th {
+        }}
+        .calendar-table th {{
             background: #f1f5f9;
             padding: 10px;
             border: 1px solid #e2e8f0;
             text-align: center;
-        }
-        .calendar-table td {
+        }}
+        .calendar-table td {{
             height: 110px;
             vertical-align: top;
             border: 1px solid #e2e8f0;
             padding: 8px;
             background: #ffffff;
-        }
-        .calendar-day {
+        }}
+        .calendar-day {{
             font-weight: 700;
             margin-bottom: 6px;
-        }
-        .calendar-item {
+        }}
+        .calendar-item {{
             font-size: 12px;
             background: #eff6ff;
             border-radius: 6px;
             padding: 4px 6px;
             margin-bottom: 4px;
             color: #1e3a8a;
-        }
+        }}
         </style>
 
         <table class="calendar-table">
@@ -7148,13 +7172,24 @@ def page_schedule():
                         safe_item = str(item).replace("<", "").replace(">", "")
                         item_html += f'<div class="calendar-item">{safe_item}</div>'
 
-                    html += f'<td><div class="calendar-day">{day}</div>{item_html}</td>'
+                    clicked_date = f"{cal_year}-{cal_month:02d}-{day:02d}"
+
+                    html += f"""
+                    <td>
+                        <div class="calendar-day">
+                            <a href='?date={clicked_date}' style='text-decoration:none; color:black;'>
+                                {day}
+                            </a>
+                        </div>
+                        {item_html}
+                    </td>
+                    """
 
             html += "</tr>"
 
         html += "</table>"
 
-        st.markdown(html, unsafe_allow_html=True)
+        components.html(html, height=760, scrolling=False)
 
     else:
         st.info("날짜 컬럼이 없어 달력을 표시할 수 없습니다.")
