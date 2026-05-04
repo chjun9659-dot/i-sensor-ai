@@ -5,6 +5,7 @@ from datetime import datetime, date, timedelta
 
 import pandas as pd
 import streamlit as st
+from modules.ui_common import page_title 
 from openpyxl import load_workbook
 import calendar
 import streamlit.components.v1 as components
@@ -3709,7 +3710,7 @@ def parse_insurance_end_date(value):
 
 
 def vehicle_page():
-    st.title("🚗 차량관리")
+    page_title("🚗 차량관리")
 
     vehicle_df = load_sheet_as_df("차량관리", VEHICLE_COLUMNS)
     repair_df = load_sheet_as_df("차량정비이력", REPAIR_COLUMNS)
@@ -3820,7 +3821,7 @@ def vehicle_page():
     # 1. 차량 목록
     # =====================================================
     with tab1:
-        st.subheader("차량 목록")
+        page_title("차량 목록")
 
         edited_vehicle_df = st.data_editor(
             vehicle_df,
@@ -6354,7 +6355,7 @@ def system_check_page():
 def page_dashboard():
     render_inspection_common_style()
     render_common_style()
-    st.title("📊 통합 대시보드")
+    page_title("📊 통합 대시보드")
     st.caption("영업 / 계약 / 시공 / 실사 / 유지보수 / 연차 / 오늘 할 일을 한 화면에서 확인합니다.")
     notice_df = load_notice() 
 
@@ -6843,7 +6844,7 @@ def page_import():
 
 
 def generic_data_page(title, key, filters_config, search_key):
-    st.title(title)
+    page_title(title)
     df = load_df(key)
     df = apply_role_filter(df)
 
@@ -6877,7 +6878,7 @@ def generic_data_page(title, key, filters_config, search_key):
     download_section(f"{title}_필터결과", df2, title)
 
 def page_tasks():
-    st.title("📝 오늘 할 일")
+    page_title("📝 오늘 할 일")
     df = load_tasks_df()
 
     new_task = st.text_input("할 일 입력")
@@ -6929,7 +6930,7 @@ def page_tasks():
                 st.rerun()
 
 def page_schedule():
-    st.title("🗓️ 일정 관리")
+    page_title("📅 일정 관리")
 
     if st.button("🔄 일정 새로고침"):
         st.cache_data.clear()
@@ -6969,7 +6970,7 @@ def page_schedule():
 
     st.write("---")
     view_df = df.copy()
-    st.subheader("📅 월별 일정 달력")
+    page_title("📅 월별 일정 달력")
 
     today = date.today()
 
@@ -7133,7 +7134,7 @@ def page_schedule():
                 st.rerun()
 
 def page_alerts():
-    st.title("🚨 영업 알림")
+    page_title("🚨 영업 알림")
 
     tax_df = load_tax_alert_df()
     meeting_df = load_meeting_alert_df()
@@ -7602,7 +7603,7 @@ def build_router_claim_export_df(base_df: pd.DataFrame, year: int, month: int) -
     return export_df
 
 def page_router_management():
-    st.title("📡 아이센서 라우터 관리")
+    page_title("📡 아이센서 라우터 관리")
 
     if st.session_state.business != "아이센서":
         st.info("라우터 관리는 아이센서 사업에서만 사용합니다.")
@@ -7694,7 +7695,7 @@ def page_router_management():
             view_df["라우터비고"].astype(str).str.contains(kw, case=False, na=False)
         ].copy()
 
-    st.subheader("1. 라우터 전체 현황")
+    page_title("1. 라우터 전체 현황")
     show_cols = [
         "관리코드_표시", "단지명_표시", "담당자_표시", "지역_표시", "수량_표시",
         "라우터사용", "라우터개통일", "라우터명의이전상태", "라우터명의이전일",
