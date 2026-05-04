@@ -1,5 +1,20 @@
 import streamlit as st
 
+def page_title(text):
+    st.markdown(f"""
+    <div style="
+        font-size:22px;
+        font-weight:700;
+        margin-top:10px;
+        margin-bottom:10px;
+        display:flex;
+        align-items:center;
+        gap:8px;
+    ">
+        {text}
+    </div>
+    """, unsafe_allow_html=True)
+
 def render_common_style():
     st.markdown("""
     <style>
