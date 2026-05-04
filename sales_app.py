@@ -354,6 +354,55 @@ def get_current_sheet_urls():
     return BUSINESS_CONFIG[st.session_state.business]["sheets"]
 
 
+def log_event(action, detail=""):
+    print(f"[{datetime.now()}] {action} | {detail}")
+
+
+def backup_before_save(df, name):
+    os.makedirs("backup", exist_ok=True)
+    path = f"backup/{name}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    df.to_csv(path, index=False, encoding="utf-8-sig")
+
+
+def gsheet_read(sheet_name, url):
+    try:
+        df = load_google_sheet_data(st.session_state.business, sheet_name, url)
+        log_event("READ", f"{sheet_name} 성공")
+        return df
+    except Exception as e:
+        log_event("READ_FAIL", f"{sheet_name} / {e}")
+        return pd.DataFrame()
+
+
+def gsheet_write(sheet_name, df, url=None):
+    try:
+        # 1) 저장 전 백업
+        backup_before_save(df, sheet_name)
+
+        # 2) 기존 로컬 저장
+        save_df(sheet_name, df)
+
+        # 3) 캐시 초기화
+        try:
+            load_google_sheet_data.clear()
+        except:
+            pass
+
+        try:
+            load_today_tasks.clear()
+        except:
+            pass
+
+        try:
+            load_notice.clear()
+        except:
+            pass
+
+        log_event("WRITE", f"{sheet_name} 저장완료 / 캐시초기화 완료")
+
+    except Exception as e:
+        log_event("WRITE_FAIL", f"{sheet_name} / {e}")
+
 # =========================================================
 # 구글 시트 연동
 # =========================================================
@@ -762,9 +811,9 @@ def load_df(sheet_key: str) -> pd.DataFrame:
 
     if sheet_key in sheet_urls:
         try:
-            df = load_google_sheet_data(st.session_state.business, sheet_key, sheet_urls[sheet_key])
+            df = gsheet_read(sheet_key, sheet_urls[sheet_key])
             if not df.empty:
-                save_df(sheet_key, df)
+                gsheet_write(sheet_key, df)
                 return df
         except Exception as e:
             st.warning(f"{sheet_key} 구글시트 불러오기 실패, 로컬 백업 사용: {e}")
@@ -4335,59 +4384,19 @@ def inspection_page():
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
-        st.markdown(
-            f"""
-            <div class="erp-summary-card">
-                <div class="erp-summary-label">전체 요청</div>
-                <div class="erp-summary-value">{total_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        ui_card("전체 요청", total_count)
 
     with c2:
-        st.markdown(
-            f"""
-            <div class="erp-summary-card">
-                <div class="erp-summary-label">요청접수</div>
-                <div class="erp-summary-value">{pending_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        ui_card("요청접수", pending_count)
 
     with c3:
-        st.markdown(
-            f"""
-            <div class="erp-summary-card">
-                <div class="erp-summary-label">진행중</div>
-                <div class="erp-summary-value">{assigned_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        ui_card("진행중", assigned_count)
 
     with c4:
-        st.markdown(
-            f"""
-            <div class="erp-summary-card">
-                <div class="erp-summary-label">실사완료</div>
-                <div class="erp-summary-value">{done_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        ui_card("실사완료", done_count)
 
     with c5:
-        st.markdown(
-            f"""
-            <div class="erp-summary-card">
-                <div class="erp-summary-label">계약완료</div>
-                <div class="erp-summary-value">{contract_done_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        ui_card("계약완료", contract_done_count)
 
     st.divider()
 
@@ -6959,7 +6968,7 @@ def page_schedule():
             st.rerun()
 
     st.write("---")
-    view_df = apply_author_filter(df)
+    view_df = df.copy()
     st.subheader("📅 월별 일정 달력")
 
     today = date.today()
@@ -6999,7 +7008,11 @@ def page_schedule():
 
         for _, row in calendar_df.iterrows():
             day = row["날짜"].day
+            author = str(row.get("작성자", "")).strip()
             title = str(row.get("일정명", "")).strip()
+
+            if author:
+                title = f"[{author}] {title}"
 
             if day not in schedule_map:
                 schedule_map[day] = []
