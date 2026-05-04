@@ -7081,9 +7081,9 @@ def page_schedule():
                     html += f"""
                     <td>
                         <div class="calendar-day">
-                            <a href='?date={clicked_date}' style='text-decoration:none; color:black;'>
+                            <span style='color:black;'>
                                 {day}
-                            </a>
+                            </span>
                         </div>
                         {item_html}
                     </td>
