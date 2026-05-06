@@ -10,6 +10,9 @@ from openpyxl import load_workbook
 import calendar
 import streamlit.components.v1 as components
 from modules.ui_common import render_common_style, ui_card
+from modules.page_schedule import schedule_page
+from modules.page_inspection import inspection_page
+from modules.page_dashboard import page_dashboard
 
 st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
 # =========================================================
