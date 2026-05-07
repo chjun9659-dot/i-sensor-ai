@@ -2164,7 +2164,7 @@ def ensure_schedule_sheet_header(sheet):
 
     # 이미 정상 구조면 종료
     if [str(x).strip() for x in old_header[:8]] == EXPECTED_COLUMNS:
-    return
+        return
 
     # 기존 데이터 유지하면서 재정렬
     old_df = pd.DataFrame(rows, columns=old_header)
