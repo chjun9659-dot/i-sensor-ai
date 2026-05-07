@@ -2163,15 +2163,15 @@ def ensure_schedule_sheet_header(sheet):
     rows = values[1:]
 
     # 이미 정상 구조면 종료
-    if old_header == EXPECTED_COLUMNS:
-        return
+    if [str(x).strip() for x in old_header[:8]] == EXPECTED_COLUMNS:
+    return
 
     # 기존 데이터 유지하면서 재정렬
     old_df = pd.DataFrame(rows, columns=old_header)
 
     # 상품구분 없으면 기본값
     if "상품구분" not in old_df.columns:
-        old_df["상품구분"] = "아이센서"
+        old_df["상품구분"] = ""
 
     # 컬럼 맞추기
     for col in EXPECTED_COLUMNS:
