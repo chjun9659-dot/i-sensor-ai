@@ -6695,20 +6695,10 @@ def page_dashboard():
 
             m1, m2, m3, m4 = st.columns(4)
 
-            with m1:
-                ui_card("전체 유지보수 계약", len(maintenance_df) if not maintenance_df.empty else 0)
-
-            with m2:
-                ui_card("진행중 계약", active_count)
-
-            with m3:
-                ui_card("전체 미수금", f"{total_unpaid:,}")
-
-            with m4:
-                ui_card("60일 내 종료예정", expiring_count)
-
-            if total_unpaid > 0:
-                st.warning(f"현재 유지보수 미수금이 {total_unpaid:,}원 있습니다.")
+            m1.metric("전체 유지보수 계약", len(maintenance_df) if not maintenance_df.empty else 0)
+            m2.metric("진행중 계약", active_count)
+            m3.metric("전체 미수금", f"{total_unpaid:,} 원")
+            m4.metric("60일 내 종료예정", expiring_count)
 
             if not unpaid_df.empty:
                 st.subheader("💰 미입금 현황")
@@ -7641,23 +7631,12 @@ def page_router_management():
     total_charge_cost = int(charge_target_df["라우터월비용"].sum()) if not charge_target_df.empty else 0
 
     r1, r2, r3, r4, r5, r6 = st.columns(6)
-    with r1:
-        ui_card("라우터 사용 단지", len(router_df))
-    
-    with r2:
-        ui_card("이전대기", len(waiting_df))
-    
-    with r3:
-        ui_card("이전거부", len(rejected_df))
-    
-    with r4:
-        ui_card("이전완료", len(finished_df))
-    
-    with r5:
-        ui_card("2026-05 청구대상건수", len(charge_target_df))
-    
-    with r6:
-        ui_card("2026-05 청구총액", f"{total_charge_cost:,}")
+    r1.metric("라우터 사용 단지", len(router_df))
+    r2.metric("이전대기", len(waiting_df))
+    r3.metric("이전거부", len(rejected_df))
+    r4.metric("이전완료", len(finished_df))
+    r5.metric("2026-05 청구대상건수", len(charge_target_df))
+    r6.metric("2026-05 청구총액", f"{total_charge_cost:,}")
         # 수금 기준 KPI
     billing_df, unpaid_df, manager_df = load_billing_dashboard_data()
 
@@ -7672,11 +7651,8 @@ def page_router_management():
         month_unpaid_count = len(month_unpaid_df)
 
     r7, r8 = st.columns(2)
-    with r7:
-        ui_card("2026-05 미수금", f"{month_unpaid_amount:,}")
-    
-    with r8:
-        ui_card("2026-05 미입금건수", month_unpaid_count)
+    r7.metric("2026-05 미수금", f"{month_unpaid_amount:,}")
+    r8.metric("2026-05 미입금건수", month_unpaid_count)
 
     if not warning_df.empty:
         st.error(f"경고 항목 {len(warning_df)}건이 있습니다. 아래 '경고/누락 확인'에서 확인하세요.")
