@@ -7632,13 +7632,24 @@ def page_router_management():
 
     total_charge_cost = int(charge_target_df["라우터월비용"].sum()) if not charge_target_df.empty else 0
 
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("라우터 사용 단지", len(router_df))
-    c2.metric("이전대기", len(waiting_df))
-    c3.metric("이전거부", len(rejected_df))
-    c4.metric("이전완료", len(finished_df))
-    c5.metric(f"{current_ym} 청구대상건수", len(charge_target_df))
-    c6.metric(f"{current_ym} 청구총액", f"{total_charge_cost:,}")
+    r1, r2, r3, r4, r5, r6 = st.columns(6)
+    with r1:
+        ui_card("라우터 사용 단지", len(router_df))
+    
+    with r2:
+        ui_card("이전대기", len(waiting_df))
+    
+    with r3:
+        ui_card("이전거부", len(rejected_df))
+    
+    with r4:
+        ui_card("이전완료", len(finished_df))
+    
+    with r5:
+        ui_card("2026-05 청구대상건수", len(charge_target_df))
+    
+    with r6:
+        ui_card("2026-05 청구총액", f"{total_charge_cost:,}")
         # 수금 기준 KPI
     billing_df, unpaid_df, manager_df = load_billing_dashboard_data()
 
@@ -7652,9 +7663,12 @@ def page_router_management():
         month_unpaid_amount = int(pd.to_numeric(month_unpaid_df["미수금"], errors="coerce").fillna(0).sum())
         month_unpaid_count = len(month_unpaid_df)
 
-    k1, k2 = st.columns(2)
-    k1.metric(f"{current_ym} 미수금", f"{month_unpaid_amount:,}")
-    k2.metric(f"{current_ym} 미입금건수", month_unpaid_count)
+    r7, r8 = st.columns(2)
+    with r7:
+        ui_card("2026-05 미수금", f"{month_unpaid_amount:,}")
+    
+    with r8:
+        ui_card("2026-05 미입금건수", month_unpaid_count)
 
     if not warning_df.empty:
         st.error(f"경고 항목 {len(warning_df)}건이 있습니다. 아래 '경고/누락 확인'에서 확인하세요.")
