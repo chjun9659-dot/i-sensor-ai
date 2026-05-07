@@ -6694,10 +6694,18 @@ def page_dashboard():
                 unpaid_df = pd.DataFrame()
 
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("전체 유지보수 계약", len(maintenance_df) if not maintenance_df.empty else 0)
-            m2.metric("진행중 계약", active_count)
-            m3.metric("전체 미수금", f"{total_unpaid:,} 원")
-            m4.metric("60일 내 종료예정", expiring_count)
+
+            with m1:
+                ui_card("전체 유지보수 계약", len(maintenance_df) if not maintenance_df.empty else 0)
+
+            with m2:
+                ui_card("진행중 계약", active_count)
+
+            with m3:
+                ui_card("전체 미수금", f"{total_unpaid:,}")
+
+            with m4:
+                ui_card("60일 내 종료예정", expiring_count)
 
             if total_unpaid > 0:
                 st.warning(f"현재 유지보수 미수금이 {total_unpaid:,}원 있습니다.")
