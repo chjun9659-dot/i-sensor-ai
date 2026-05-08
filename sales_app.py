@@ -6723,6 +6723,7 @@ def page_dashboard():
 
         try:
             vacation_df = load_df("연차관리")
+            vacation_df = vacation_df.fillna("").astype(str)
             # ✅ 대시보드 연차 권한 필터
             login_role = str(st.session_state.get("role", "")).strip()
             login_name = str(st.session_state.get("display_name", "")).strip()
