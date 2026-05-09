@@ -45,8 +45,8 @@ def render_global_style():
     }
 
     .yw-card:hover {
-        transform: translateY(-6px) scale(1.02);
-        box-shadow: 0 16px 32px rgba(0,0,0,0.18);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(0,0,0,0.12);
     }
 
     div[data-testid="stMetric"] {
@@ -59,8 +59,8 @@ def render_global_style():
     }
 
     div[data-testid="stMetric"]:hover {
-        transform: translateY(-4px) scale(1.01);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.12) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 18px rgba(0,0,0,0.10) !important;
     }
 
     .card-value {
