@@ -16,7 +16,7 @@ def schedule_page():
 
     render_common_style()
 
-    st.markdown('<div class="erp-page-title">시공 일정 관리 프로그램</div>', unsafe_allow_html=True)
+    st.markdown('<div class="erp-page-title">📅 시공 일정 관리 프로그램</div>', unsafe_allow_html=True)
     st.markdown('<div class="erp-page-desc">시공 일정 등록, 수정, 진행 현황 관리</div>', unsafe_allow_html=True)
 
     def style_schedule_status(val):
@@ -419,4 +419,3 @@ def schedule_page():
 
                 st.success("삭제 완료!")
                 st.rerun()               
-    # 여기부터 기존 UI 코드 조금씩 이동
