@@ -5,7 +5,6 @@ from datetime import date
 
 def inspection_page():
     from __main__ import (
-    render_inspection_common_style,
     render_common_style,
     load_inspection_data,
     normalize_inspection_df,
@@ -18,7 +17,6 @@ def inspection_page():
     safe_int,
 )
 
-    render_inspection_common_style()
     render_common_style()
 
     st.markdown(
