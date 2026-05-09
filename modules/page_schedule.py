@@ -4,7 +4,6 @@ from datetime import date
 
 def schedule_page():
     from __main__ import (
-        render_inspection_common_style,
         render_common_style,
         load_schedule_data,
         save_schedule_data,
@@ -15,7 +14,6 @@ def schedule_page():
         EXPECTED_COLUMNS,
     )
 
-    render_inspection_common_style()
     render_common_style()
 
     st.markdown('<div class="erp-page-title">시공 일정 관리 프로그램</div>', unsafe_allow_html=True)
