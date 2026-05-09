@@ -2443,7 +2443,10 @@ def vacation_page():
     # 관리 도구
     # =====================================================
     if is_admin:
-        st.subheader("🛠 관리 도구")
+        st.markdown(
+            '<div class="erp-section-title">🛠 관리 도구</div>',
+            unsafe_allow_html=True
+        )
 
         tool_col1, tool_col2, tool_col3 = st.columns(3)
 
@@ -2475,7 +2478,10 @@ def vacation_page():
     # =====================================================
     # 직원 선택
     # =====================================================
-    st.subheader("👥 직원 선택")
+    st.markdown(
+        '<div class="erp-section-title">👥 직원 선택</div>',
+        unsafe_allow_html=True
+    )
 
     names = sorted(df_view["이름"].dropna().astype(str).unique().tolist())
 
@@ -2507,7 +2513,10 @@ def vacation_page():
     # =====================================================
     # 현재 연차 현황
     # =====================================================
-    st.subheader("📌 현재 연차 현황")
+    st.markdown(
+        '<div class="erp-section-title">📌 현재 연차 현황</div>',
+        unsafe_allow_html=True
+    )
 
     col1, col2, col3 = st.columns(3)
 
@@ -3033,7 +3042,10 @@ def vacation_page():
         basic_cols = [col for col in basic_cols if col in display_df.columns]
         use_cols = [col for col in use_cols if col in display_df.columns]
 
-        st.subheader("📊 기본 연차 정보")
+        st.markdown(
+            '<div class="erp-section-title">📊 기본 연차 정보</div>',
+            unsafe_allow_html=True
+        )
 
         basic_df = display_df[basic_cols].copy()
 
@@ -3046,7 +3058,10 @@ def vacation_page():
         else:
             st.dataframe(basic_df, use_container_width=True, height=400)
 
-        st.subheader("🧾 연차 사용 이력")
+        st.markdown(
+            '<div class="erp-section-title">🧾 연차 사용 이력</div>',
+            unsafe_allow_html=True
+        )
 
         if use_cols:
             use_df = display_df[["이름"] + use_cols].set_index("이름")
@@ -3361,45 +3376,8 @@ def vehicle_page():
             elif remain_days <= 30:
                 insurance_warning_count += 1
 
-    st.markdown("""
-    <style>
-    .vehicle-card {
-        background: #ffffff;
-        border-radius: 14px;
-        padding: 18px 22px;
-        border: 1px solid #eef2f7;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-        transition: all 0.22s ease;
-        min-height: 105px;
-    }
-    .vehicle-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
-    }
-    .vehicle-card-label {
-        font-size: 13x;
-        color: #64748b;
-        font-weight: 700;
-        margin-bottom: 10px;
-    }
-    .vehicle-card-value {
-        font-size: 22px;
-        font-weight: 700;
-        color: #0f172a;
-        line-height: 1.2;
-        white-space: nowrap;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     def vehicle_card(title, value, sub=""):
-        st.markdown(f"""
-        <div class="vehicle-card">
-            <div class="vehicle-card-label">{title}</div>
-            <div class="vehicle-card-value">{value}</div>
-            <div class="vehicle-card-sub">{sub}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        ui_card(title, value, sub)
 
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
@@ -4492,7 +4470,10 @@ def maintenance_page():
             v1, v2 = st.columns(2)
 
             with v1:
-                st.subheader("기본 정보")
+                st.markdown(
+                    '<div class="erp-section-title">기본 정보</div>',
+                    unsafe_allow_html=True
+                )
                 st.write(f"**코드번호**: {row['코드번호']}")
                 st.write(f"**단지명**: {row['단지명']}")
                 st.write(f"**연락처**: {row['연락처']}")
@@ -4503,7 +4484,10 @@ def maintenance_page():
                 st.write(f"**총계약금액**: {format_currency(row['총계약금액'])} 원")
 
             with v2:
-                st.subheader("계약 정보")
+                st.markdown(
+                    '<div class="erp-section-title">계약 정보</div>',
+                    unsafe_allow_html=True
+                )
                 st.write(f"**계약시작일**: {row['계약시작일']}")
                 st.write(f"**계약종료일**: {row['계약종료일']}")
                 st.write(f"**계약상태**: {row['계약상태']}")
@@ -4515,7 +4499,10 @@ def maintenance_page():
                 else:
                     st.caption("첨부파일 없음")
 
-            st.subheader("월별 수금 이력")
+            st.markdown(
+                '<div class="erp-section-title">월별 수금 이력</div>',
+                unsafe_allow_html=True
+            )
             history_df = pay_df[pay_df["코드번호"].astype(str) == str(row["코드번호"]).strip()].copy()
 
             if history_df.empty:
@@ -4791,7 +4778,10 @@ def system_check_page():
         st.warning("관리자만 접근할 수 있습니다.")
         return
 
-    st.subheader("1. 기본 상태")
+    st.markdown(
+        '<div class="erp-section-title">1. 기본 상태</div>',
+        unsafe_allow_html=True
+    )
 
     try:
         client = get_gsheet_client()
@@ -4802,7 +4792,10 @@ def system_check_page():
 
     st.divider()
 
-    st.subheader("2. 주요 데이터 점검")
+    st.markdown(
+        '<div class="erp-section-title">2. 주요 데이터 점검</div>',
+        unsafe_allow_html=True
+    )
 
     check_targets = []
 
@@ -4855,7 +4848,10 @@ def system_check_page():
 
     st.divider()
 
-    st.subheader("3. 캐시 관리")
+    st.markdown(
+        '<div class="erp-section-title">3. 캐시 관리</div>',
+        unsafe_allow_html=True
+    )
 
     if st.button("🔄 캐시 초기화", key="system_cache_clear_btn"):
         st.cache_data.clear()
@@ -4875,7 +4871,10 @@ def page_import():
         st.write(sheet_urls)
 
     st.divider()
-    st.subheader("구글시트 연결 확인")
+    st.markdown(
+        '<div class="erp-section-title">구글시트 연결 확인</div>',
+        unsafe_allow_html=True
+    )
     for sheet_name, url in sheet_urls.items():
         try:
             df = load_google_sheet_data(st.session_state.business, sheet_name, url)
@@ -4887,7 +4886,10 @@ def page_import():
             st.error(f"{sheet_name}: 연결 실패 - {e}")
 
     st.divider()
-    st.subheader("현재 사업 전체 데이터 백업 다운로드")
+    st.markdown(
+        '<div class="erp-section-title">현재 사업 전체 데이터 백업 다운로드</div>',
+        unsafe_allow_html=True
+    )
     export_dict = {key: load_df(key) for key in sheet_urls.keys()}
     all_excel = to_excel_bytes(export_dict)
     st.download_button(
@@ -5200,7 +5202,10 @@ def page_alerts():
     view_meeting_df = apply_author_filter(meeting_df)
     view_schedule_df = apply_author_filter(schedule_df)
 
-    st.subheader("1. 알림 요약")
+    st.markdown(
+        '<div class="erp-section-title">1. 알림 요약</div>',
+        unsafe_allow_html=True
+    )
     c1, c2, c3 = st.columns(3)
 
     tax_temp = view_tax_df.copy()
@@ -5232,7 +5237,10 @@ def page_alerts():
     c3.metric("일정 알림", len(schedule_pending))
 
     st.divider()
-    st.subheader("2. 세금계산서 발행 알림 등록")
+    st.markdown(
+        '<div class="erp-section-title">2. 세금계산서 발행 알림 등록</div>',
+        unsafe_allow_html=True
+    )
     col1, col2, col3 = st.columns(3)
     tax_site = col1.text_input("단지명", key="tax_site")
     tax_date = col2.date_input("발행 예정일", key="tax_date")
@@ -5254,7 +5262,10 @@ def page_alerts():
             st.success("세금계산서 알림이 등록되었습니다.")
             st.rerun()
 
-    st.subheader("세금계산서 알림 목록")
+    st.markdown(
+        '<div class="erp-section-title">세금계산서 알림 목록</div>',
+        unsafe_allow_html=True
+    )
     if view_tax_df.empty:
         st.info("등록된 세금계산서 알림이 없습니다.")
     else:
@@ -5266,7 +5277,10 @@ def page_alerts():
         show_alert_table(view_tax[["단지명", "예정일", "D-Day", "상태", "상태표시", "비고", "작성자"]])
 
     st.divider()
-    st.subheader("3. 입대의 알림 등록")
+    st.markdown(
+        '<div class="erp-section-title">3. 임대의 알림 등록</div>',
+        unsafe_allow_html=True
+    )
     m1, m2, m3 = st.columns(3)
     meeting_site = m1.text_input("단지명", key="meeting_site")
     meeting_date = m2.date_input("입대의일자", key="meeting_date")
@@ -5288,7 +5302,10 @@ def page_alerts():
             st.success("입대의 알림이 등록되었습니다.")
             st.rerun()
 
-    st.subheader("입대의 알림 목록")
+    st.markdown(
+        '<div class="erp-section-title">임대의 알림 목록</div>',
+        unsafe_allow_html=True
+    )
 
     with st.expander(f"📋 상세 보기 ({len(view_meeting_df)}건)", expanded=False):
 
@@ -5771,7 +5788,10 @@ def page_router_management():
 
     st.divider()
 
-    st.subheader(f"2. {current_ym} 청구 대상")
+    st.markdown(
+        f'<div class="erp-section-title">2. {current_ym} 청구 대상</div>',
+        unsafe_allow_html=True
+    )
     if charge_target_df.empty:
         st.info("이번달 청구 대상이 없습니다.")
     else:
@@ -5791,7 +5811,10 @@ def page_router_management():
 
     st.divider()
 
-    st.subheader("3. 청구 엑셀 자동 생성")
+    st.markdown(
+        '<div class="erp-section-title">3. 청구 엑셀 자동 생성</div>',
+        unsafe_allow_html=True
+    )
     g1, g2 = st.columns(2)
     claim_year = g1.number_input("청구 연도", min_value=2024, max_value=2100, value=current_year, step=1, key="router_claim_year")
     claim_month = g2.selectbox("청구 월", list(range(1, 13)), index=current_month - 1, key="router_claim_month")
@@ -5942,7 +5965,10 @@ def page_router_management():
 
     st.divider()
 
-    st.subheader("6. 경고 / 누락 확인")
+    st.markdown(
+        '<div class="erp-section-title">6. 경고 / 누락 확인</div>',
+        unsafe_allow_html=True
+    )
     if warning_df.empty:
         st.success("긴급 경고 항목이 없습니다.")
     else:
