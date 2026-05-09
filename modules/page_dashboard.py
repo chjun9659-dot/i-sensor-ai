@@ -4,7 +4,6 @@ from datetime import date
 
 def page_dashboard():
     from __main__ import (
-        render_inspection_common_style,
         render_common_style,
         page_title,
         load_notice,
@@ -24,7 +23,6 @@ def page_dashboard():
         get_contract_expiring_soon,
     )
 
-    render_inspection_common_style()
     render_common_style()
 
     page_title("📊 통합 대시보드")
