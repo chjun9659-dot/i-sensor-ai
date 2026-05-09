@@ -86,7 +86,9 @@ def render_global_style():
         margin-top: 3px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
     }
-    .erp-section-title {
+    .erp-section-title,
+    div.erp-section-title,
+    .stMarkdown .erp-section-title {
         font-size: 17px !important;
         font-weight: 700 !important;
         color: #0f172a !important;
