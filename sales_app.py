@@ -2,7 +2,7 @@ import os
 import re
 import io
 from datetime import datetime, date, timedelta
-
+from modules.ui_common import ui_card
 import pandas as pd
 import streamlit as st
 from modules.ui_common import page_title 
@@ -2524,9 +2524,14 @@ def vacation_page():
     used = to_number(employee["사용 연차"])
     remain = to_number(employee["잔여 연차"])
 
-    col1.metric("총 연차", format_leave_number(total))
-    col2.metric("사용 연차", format_leave_number(used))
-    col3.metric("잔여 연차", format_leave_number(remain))
+    with col1:
+        ui_card("총 연차", format_leave_number(total), "발생 연차")
+
+    with col2:
+        ui_card("사용 연차", format_leave_number(used), "사용 완료")
+
+    with col3:
+        ui_card("잔여 연차", format_leave_number(remain), "현재 잔여")
 
     if remain <= 0:
         st.error("잔여 연차가 없습니다.")
@@ -2996,8 +3001,12 @@ def vacation_page():
         )
 
         metric_col1, metric_col2 = st.columns(2)
-        metric_col1.metric("해당 월 사용 건수", monthly_count)
-        metric_col2.metric("해당 월 총 사용일수", format_leave_number(monthly_amount))
+
+        with metric_col1:
+            ui_card("해당 월 사용 건수", monthly_count, "사용 횟수")
+
+        with metric_col2:
+            ui_card("해당 월 총 사용일수", format_leave_number(monthly_amount), "사용 연차")
 
         if not monthly_df.empty:
             st.dataframe(monthly_df, use_container_width=True)
@@ -4058,8 +4067,8 @@ def save_maintenance_payment_data(df, sheet=None):
 def maintenance_page():
     render_common_style()
 
-    st.markdown('<div class="erp-page-title">아이센서 유지보수관리 프로그램</div>', unsafe_allow_html=True)
-    st.markdown('<div class="erp-page-desc">유지보수 계약등록, 월별 청구/수금, 미수금 관리</div>', unsafe_allow_html=True)
+    page_title("📡 아이센서 유지보수관리 프로그램")
+    st.caption("유지보수 계약등록, 월별 청구/수금, 미수금 관리")
     st.markdown("""
     <style>
     .maintenance-alert-box {
@@ -4123,12 +4132,24 @@ def maintenance_page():
     expiring_count = len(expiring_df)
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("전체 계약", total_count)
-    c2.metric("진행중 계약", active_count)
-    c3.metric("총 수량", total_qty)
-    c4.metric("전체 계약금액", format_currency(total_amount))
-    c5.metric("전체 미수금", format_currency(total_unpaid))
-    c6.metric("60일 내 종료예정", expiring_count)
+
+    with c1:
+        ui_card("전체 계약", total_count, "전체 유지보수 계약")
+
+    with c2:
+        ui_card("진행중 계약", active_count, "현재 진행중")
+
+    with c3:
+        ui_card("총 수량", total_qty, "설치 수량")
+
+    with c4:
+        ui_card("전체 계약금액", format_currency(total_amount), "전체 계약")
+
+    with c5:
+        ui_card("전체 미수금", format_currency(total_unpaid), "미수금 합계")
+
+    with c6:
+        ui_card("60일 내 종료예정", expiring_count, "계약 종료 임박")
     if total_unpaid > 0:
         st.markdown(
             f'<div class="maintenance-alert-box maintenance-alert-danger">⚠️ 현재 미수금 총액: {format_currency(total_unpaid)} 원</div>',
@@ -4353,9 +4374,15 @@ def maintenance_page():
         month_paid_count = len(view_df[view_df["입금여부"] == "입금완료"]) if not view_df.empty else 0
 
         m1, m2, m3 = st.columns(3)
-        m1.metric("월 청구금액", format_currency(month_claim_total))
-        m2.metric("월 미수금", format_currency(month_unpaid_total))
-        m3.metric("입금완료 건수", month_paid_count)
+
+        with m1:
+            ui_card("월 청구금액", format_currency(month_claim_total), "이번달 청구")
+
+        with m2:
+            ui_card("월 미수금", format_currency(month_unpaid_total), "미수금 합계")
+
+        with m3:
+            ui_card("입금완료 건수", month_paid_count, "입금 완료")
 
         if view_df.empty:
             st.info("조건에 맞는 수금자료가 없습니다.")
@@ -5232,9 +5259,14 @@ def page_alerts():
     else:
         schedule_pending = pd.DataFrame()
 
-    c1.metric("세금계산서 알림", len(tax_pending))
-    c2.metric("입대의 알림", len(meeting_pending))
-    c3.metric("일정 알림", len(schedule_pending))
+    with c1:
+        ui_card("세금계산서 알림", len(tax_pending), "발행 필요")
+
+    with c2:
+        ui_card("임대의 알림", len(meeting_pending), "미확인 일정")
+
+    with c3:
+        ui_card("일정 알림", len(schedule_pending), "오늘/긴급 일정")
 
     st.divider()
     st.markdown(
@@ -5704,12 +5736,23 @@ def page_router_management():
 
     r1, r2, r3, r4, r5, r6 = st.columns(6)
 
-    r1.metric("라우터 사용 단지", len(router_df))
-    r2.metric("이전대기", len(waiting_df))
-    r3.metric("이전거부", len(rejected_df))
-    r4.metric("이전완료", len(finished_df))
-    r5.metric("2026-05 청구대상건수", len(charge_target_df))
-    r6.metric("2026-05 청구총액", f"{total_charge_cost:,}")
+    with r1:
+        ui_card("라우터 사용 단지", len(router_df), "사용중 단지")
+
+    with r2:
+        ui_card("이전대기", len(waiting_df), "처리 대기")
+
+    with r3:
+        ui_card("이전거부", len(rejected_df), "거부 상태")
+
+    with r4:
+        ui_card("이전완료", len(finished_df), "처리 완료")
+
+    with r5:
+        ui_card("2026-05 청구대상건수", len(charge_target_df), "청구 대상")
+
+    with r6:
+        ui_card("2026-05 청구총액", f"{total_charge_cost:,}", "이번달 청구")
         # 수금 기준 KPI
     billing_df, unpaid_df, manager_df = load_billing_dashboard_data()
 
@@ -5725,8 +5768,11 @@ def page_router_management():
 
     r7, r8 = st.columns(2)
 
-    r7.metric("2026-05 미수금", f"{month_unpaid_amount:,}")
-    r8.metric("2026-05 미입금건수", month_unpaid_count)
+    with r7:
+        ui_card("2026-05 미수금", f"{month_unpaid_amount:,}", "미수금 합계")
+
+    with r8:
+        ui_card("2026-05 미입금건수", month_unpaid_count, "미입금 건수")
 
     if not warning_df.empty:
         st.error(f"경고 항목 {len(warning_df)}건이 있습니다. 아래 '경고/누락 확인'에서 확인하세요.")
@@ -5873,8 +5919,12 @@ def page_router_management():
             unpaid_count = int((pd.to_numeric(billing_df["미수금"], errors="coerce").fillna(0) > 0).sum())
 
             s1, s2 = st.columns(2)
-            s1.metric("총 미수금", f"{total_unpaid:,}")
-            s2.metric("미입금건수", unpaid_count)
+
+            with s1:
+                ui_card("총 미수금", f"{total_unpaid:,}", "전체 미수금")
+
+            with s2:
+                ui_card("미입금건수", unpaid_count, "미입금 건수")
 
             month_billing_df = billing_df[
                 billing_df["기준월"].astype(str).str.strip() == claim_ym
