@@ -1,21 +1,26 @@
 import streamlit as st
-import streamlit as st
 import pandas as pd
 from datetime import date
 
 def inspection_page():
     from __main__ import (
-    render_common_style,
-    load_inspection_data,
-    normalize_inspection_df,
-    apply_product_filter,
-    detect_inspection_duplicates,
-    ui_card,
-    INSPECTION_STATUS_OPTIONS,
-    PRODUCT_OPTIONS,
-    CONTRACT_OPTIONS,
-    safe_int,
-)
+        render_common_style,
+        load_inspection_data,
+        normalize_inspection_df,
+        apply_product_filter,
+        detect_inspection_duplicates,
+        ui_card,
+        INSPECTION_STATUS_OPTIONS,
+        PRODUCT_OPTIONS,
+        CONTRACT_OPTIONS,
+        safe_int,
+        INSPECTION_COLUMNS,
+        save_inspection_data,
+        set_inspection_flash,
+        find_original_inspection_index,
+        ENV_OPTIONS,
+        JATU_OPTIONS,
+    )
 
     render_common_style()
 
@@ -98,7 +103,7 @@ def inspection_page():
             request_content = st.text_area("요청내용", key=f"request_content_{form_ver}")
             note = st.text_input("비고", key=f"note_{form_ver}")
 
-            st.subheader("첨부파일")
+            st.markdown('<div class="erp-section-title">첨부파일</div>', unsafe_allow_html=True)
             uploaded_file = st.file_uploader(
                 "실사 관련 파일 업로드",
                 type=["pdf", "png", "jpg", "jpeg", "xlsx", "xls", "doc", "docx"],
@@ -788,7 +793,7 @@ def inspection_page():
 
             else:
 
-                st.markdown("### 📌 기본 정보 수정")
+                st.markdown('<div class="erp-section-title">📌 기본 정보 수정</div>', unsafe_allow_html=True)
 
                 req_date_raw = str(view_row["요청일"]).strip()
                 parsed_req_date = pd.to_datetime(req_date_raw, errors="coerce")
@@ -832,7 +837,7 @@ def inspection_page():
                     edit_request = st.text_area("요청내용 수정", value=str(view_row["요청내용"]))
                     edit_note = st.text_input("비고 수정", value=str(view_row["비고"]))
 
-                    st.subheader("첨부파일 수정")
+                    st.markdown('<div class="erp-section-title">첨부파일 수정</div>', unsafe_allow_html=True)
                     edit_uploaded_file = st.file_uploader(
                         "새 첨부파일 업로드",
                         type=["pdf", "png", "jpg", "jpeg", "xlsx", "xls", "doc", "docx"],
