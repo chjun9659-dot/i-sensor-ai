@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 
 def page_dashboard():
     from __main__ import (
@@ -21,6 +21,8 @@ def page_dashboard():
         load_maintenance_data,
         load_maintenance_payment_data,
         get_contract_expiring_soon,
+        get_gsheet_client,
+        NOTICE_SHEET_URL,
     )
 
     render_common_style()
@@ -83,7 +85,7 @@ def page_dashboard():
                         st.error(f"공지 등록 실패: {e}")
 
             st.divider()
-            st.markdown("#### 🗑️ 공지 삭제")
+            st.markdown('<div class="erp-section-title">🗑️ 공지 삭제</div>', unsafe_allow_html=True)
 
             notice_delete_df = load_notice().fillna("")
 
@@ -171,7 +173,10 @@ def page_dashboard():
     # =========================
     # 2. 상단 핵심 KPI
     # =========================
-    st.subheader("📌 핵심 현황")
+    st.markdown(
+        '<div class="erp-section-title">📌 핵심 현황</div>',
+        unsafe_allow_html=True
+    )
 
     k1, k2, k3 = st.columns(3)
 
@@ -189,7 +194,10 @@ def page_dashboard():
     # =========================
     # 3. 시공 일정 요약
     # =========================
-    st.subheader("🛠 시공 일정 요약")
+    st.markdown(
+        '<div class="erp-section-title">🛠 시공 일정 요약</div>',
+        unsafe_allow_html=True
+    )
 
     try:
         construction_df = load_schedule_data()
@@ -244,7 +252,7 @@ def page_dashboard():
             # )
 
             if not today_construction.empty:
-                st.subheader("📅 오늘 시공 일정")
+                st.markdown('<div class="erp-section-title">📅 오늘 시공 일정</div>', unsafe_allow_html=True)
                 st.dataframe(
                     today_construction[["날짜","상품구분", "설치현장", "시공담당", "수량", "비고", "상태"]],
                     use_container_width=True,
@@ -261,7 +269,10 @@ def page_dashboard():
     # =========================
     # 4. 실사 관리 요약
     # =========================
-    st.subheader("🔎 실사 관리 요약")
+    st.markdown(
+        '<div class="erp-section-title">🔎 실사 관리 요약</div>',
+        unsafe_allow_html=True
+    )
 
     try:
         inspection_df = load_inspection_data()
@@ -320,7 +331,7 @@ def page_dashboard():
             # )
 
             recent_insp = inspection_df.tail(10).copy()
-            st.subheader("최근 실사 요청")
+            st.markdown('<div class="erp-section-title">최근 실사 요청</div>', unsafe_allow_html=True)
             st.dataframe(
                 recent_insp[[
                     "요청일", "현장명", "상품구분", "영업담당자",
@@ -340,7 +351,10 @@ def page_dashboard():
     # =========================
     if st.session_state.business == "아이센서":
 
-        st.subheader("📡 유지보수 / 수금 요약")
+        st.markdown(
+            '<div class="erp-section-title">📡 유지보수 / 수금 요약</div>',
+            unsafe_allow_html=True
+        )
 
         try:
             maintenance_df = load_maintenance_data()
@@ -370,7 +384,10 @@ def page_dashboard():
                 st.warning(f"현재 유지보수 미수금이 {total_unpaid:,}원 있습니다.")
 
             if not unpaid_df.empty:
-                st.subheader("💰 미입금 현황")
+                st.markdown(
+                    '<div class="erp-section-title">💰 미입금 현황</div>',
+                    unsafe_allow_html=True
+                )
                 show_unpaid = unpaid_df[[
                     "기준년월", "코드번호", "단지명", "청구금액",
                     "입금여부", "미수금", "영업담당자"
@@ -388,7 +405,10 @@ def page_dashboard():
     # =========================
     if st.session_state.get("business") == "아이센서":
 
-        st.subheader("👥 연차 요약")
+        st.markdown(
+            '<div class="erp-section-title">👥 연차 요약</div>',
+            unsafe_allow_html=True
+        )
 
         try:
             vacation_df = load_df("연차관리")
@@ -421,7 +441,7 @@ def page_dashboard():
                 v3.metric("잔여 0일 이하", len(zero_leave_df))
 
                 if login_role == "관리자":
-                    st.subheader("📊 연차 사용 현황 그래프")
+                    st.markdown('<div class="erp-section-title">📊 연차 사용 현황 그래프</div>', unsafe_allow_html=True)
 
                     leave_chart_df = vacation_df[["이름", "사용 연차", "잔여 연차"]].copy()
                     leave_chart_df = leave_chart_df.set_index("이름")
@@ -438,12 +458,15 @@ def page_dashboard():
     # =========================
     # 7. 오늘 할 일 / 일정
     # =========================
-    st.subheader("✅ 오늘 할 일 / 일정")
+    st.markdown(
+        '<div class="erp-section-title">✅ 오늘 할 일 / 일정</div>',
+        unsafe_allow_html=True
+    )
 
     t1, t2 = st.columns(2)
 
     with t1:
-        st.subheader("오늘 할 일")
+        st.markdown('<div class="erp-section-title">오늘 할 일</div>', unsafe_allow_html=True)
 
         if task_df.empty:
             st.info("등록된 할 일이 없습니다.")
@@ -455,7 +478,7 @@ def page_dashboard():
             )
 
     with t2:
-        st.subheader("일정 관리")
+        st.markdown('<div class="erp-section-title">일정 관리</div>', unsafe_allow_html=True)
 
         if schedule_common_df.empty:
             st.info("등록된 일정이 없습니다.")
