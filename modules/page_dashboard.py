@@ -375,10 +375,17 @@ def page_dashboard():
                 unpaid_df = pd.DataFrame()
 
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("전체 유지보수 계약", len(maintenance_df) if not maintenance_df.empty else 0)
-            m2.metric("진행중 계약", active_count)
-            m3.metric("전체 미수금", f"{total_unpaid:,} 원")
-            m4.metric("60일 내 종료예정", expiring_count)
+            with m1:
+                ui_card("전체 유지보수 계약", len(maintenance_df) if not maintenance_df.empty else 0, "전체 계약")
+
+            with m2:
+                ui_card("진행중 계약", active_count, "현재 진행중")
+
+            with m3:
+                ui_card("전체 미수금", f"{total_unpaid:,} 원", "미입금 합계")
+
+            with m4:
+                ui_card("60일 내 종료예정", expiring_count, "계약 종료 임박")
 
             if total_unpaid > 0:
                 st.warning(f"현재 유지보수 미수금이 {total_unpaid:,}원 있습니다.")
@@ -423,10 +430,17 @@ def page_dashboard():
 
             if vacation_df.empty:
                 v1, v2, v3 = st.columns(3)
-                v1.metric("직원 수", 0)
-                v2.metric("잔여 5일 이하", 0)
-                v3.metric("잔여 0일 이하", 0)
+
+                with v1:
+                    ui_card("직원 수", 0, "연차 대상 직원")
+
+                with v2:
+                    ui_card("잔여 5일 이하", 0, "연차 소진 임박")
+
+                with v3:
+                    ui_card("잔여 0일 이하", 0, "잔여 연차 없음")
                 st.info("연차 데이터가 없습니다.")
+                
             else:
                 for col in ["발생 연차", "사용 연차", "잔여 연차"]:
                     if col in vacation_df.columns:
@@ -436,9 +450,14 @@ def page_dashboard():
                 zero_leave_df = vacation_df[vacation_df["잔여 연차"] <= 0].copy() if "잔여 연차" in vacation_df.columns else pd.DataFrame()
 
                 v1, v2, v3 = st.columns(3)
-                v1.metric("직원 수", len(vacation_df))
-                v2.metric("잔여 5일 이하", len(low_leave_df))
-                v3.metric("잔여 0일 이하", len(zero_leave_df))
+                with v1:
+                    ui_card("직원 수", len(vacation_df), "연차 대상 직원")
+
+                with v2:
+                    ui_card("잔여 5일 이하", len(low_leave_df), "연차 소진 임박")
+
+                with v3:
+                    ui_card("잔여 0일 이하", len(zero_leave_df), "잔여 연차 없음")
 
                 if login_role == "관리자":
                     st.markdown('<div class="erp-section-title">📊 연차 사용 현황 그래프</div>', unsafe_allow_html=True)
