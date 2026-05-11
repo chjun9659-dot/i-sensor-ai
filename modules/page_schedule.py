@@ -53,10 +53,15 @@ def schedule_page():
                 product_series = df["상품구분"].astype(str).str.strip()
 
                 if st.session_state.business == "아이센서":
-                    df = df[product_series.str.contains("아이센서", na=False)].copy()
+                    df = df[
+                        product_series.str.contains("아이센서", na=False)
+                    ].copy()
 
                 elif st.session_state.business == "전기차 충전기":
-                    df = df[product_series.str.contains("전기차", na=False)].copy()
+                    df = df[
+                        product_series.str.contains("전기차", na=False) |
+                        product_series.str.contains("충전기", na=False)
+                    ].copy()
 
             login_role = str(st.session_state.get("role", "")).strip()
             login_name = str(st.session_state.get("display_name", "")).strip()
