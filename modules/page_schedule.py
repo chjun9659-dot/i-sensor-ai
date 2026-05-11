@@ -38,16 +38,11 @@ def schedule_page():
         if df.empty:
             df = pd.DataFrame(columns=EXPECTED_COLUMNS)
         else:
-            df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce")
-            df["완료일"] = pd.to_datetime(df["완료일"], errors="coerce")
+            df["날짜"] = df["날짜"].astype(str).str.strip()
+            df["완료일"] = df["완료일"].astype(str).str.strip()
 
-            df = df.dropna(subset=["날짜"])
-
-            df["날짜"] = df["날짜"].dt.strftime("%Y-%m-%d")
-            df["완료일"] = df["완료일"].dt.strftime("%Y-%m-%d")
-
-            df["날짜"] = df["날짜"].fillna("")
-            df["완료일"] = df["완료일"].fillna("")
+            df["날짜"] = df["날짜"].str.replace("/", "-", regex=False)
+            df["완료일"] = df["완료일"].str.replace("/", "-", regex=False)
 
             if "상품구분" in df.columns:
                 product_series = df["상품구분"].astype(str).str.strip()
