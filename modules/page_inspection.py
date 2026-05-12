@@ -20,6 +20,7 @@ def inspection_page():
         find_original_inspection_index,
         ENV_OPTIONS,
         JATU_OPTIONS,
+        upload_file_to_drive,
     )
 
     render_common_style()
@@ -122,15 +123,11 @@ def inspection_page():
                     attachment_link = ""
 
                     if uploaded_file is not None:
-                        try:
-                            attachment_name, attachment_link = upload_file_to_drive(
-                                uploaded_file,
-                                folder_id="13W2N1v9IBiuZEstmTrvt57Zg8XQiHt7J"
-                            )
-                        except Exception as e:
-                            st.error(str(e))
-                            attachment_name = ""
-                            attachment_link = ""
+                        attachment_name = uploaded_file.name
+                        attachment_link = ""
+                    else:
+                        attachment_name = ""
+                        attachment_link = ""
 
                     new_row = pd.DataFrame([{
                         "요청일": str(req_date),
@@ -895,16 +892,8 @@ def inspection_page():
                             full_df.loc[original_idx, "첨부파일링크"] = ""
 
                         if edit_uploaded_file is not None:
-                            try:
-                                new_attachment_name, new_attachment_link = upload_file_to_drive(
-                                    edit_uploaded_file,
-                                    folder_id="13W2N1v9IBiuZEstmTrvt57Zg8XQiHt7J"
-                                )
-                                full_df.loc[original_idx, "첨부파일명"] = new_attachment_name
-                                full_df.loc[original_idx, "첨부파일링크"] = new_attachment_link
-                            except Exception as e:
-                                st.error(f"첨부파일 업로드 실패: {e}")
-                                st.stop()
+                            full_df.loc[original_idx, "첨부파일명"] = edit_uploaded_file.name
+                            full_df.loc[original_idx, "첨부파일링크"] = ""
 
                         save_inspection_data(full_df)
 
