@@ -430,17 +430,102 @@ def get_gsheet_client():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     key_path = os.path.join(base_dir, "service_account.json")
 
-    # 1) 배포 우선: Streamlit secrets 시도
     try:
         creds_dict = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
+        creds = Credentials.from_service_account_info(
+            dict(creds_dict),
+            scopes=scopes
+        )
+
         client = gspread.authorize(creds)
 
         st.session_state["google_auth_debug"] = {
             "mode": "streamlit_secrets",
             "client_email": creds.service_account_email,
         }
+
         return client
+
+    except Exception as secrets_error:
+
+        if os.path.exists(key_path):
+
+            creds = Credentials.from_service_account_file(
+                key_path,
+                scopes=scopes
+            )
+
+            client = gspread.authorize(creds)
+
+            st.session_state["google_auth_debug"] = {
+                "mode": "local_json",
+                "key_path": key_path,
+                "client_email": creds.service_account_email,
+                "secrets_error": str(secrets_error),
+            }
+
+            return client
+
+        raise RuntimeError(
+            f"구글 인증 실패 / secrets 오류: {secrets_error}"
+        )
+    
+def get_drive_service():
+    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials
+    import os
+    import streamlit as st
+
+    scopes = [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/spreadsheets",
+    ]
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    key_path = os.path.join(base_dir, "service_account.json")
+
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
+    except Exception:
+        creds = Credentials.from_service_account_file(key_path, scopes=scopes)
+
+    return build("drive", "v3", credentials=creds)
+
+def upload_file_to_drive(file, folder_id=None):
+    from googleapiclient.http import MediaIoBaseUpload
+    import streamlit as st
+
+    try:
+        if file is None:
+            return ""
+
+        service = get_drive_service()
+
+        file_metadata = {
+            "name": file.name
+        }
+
+        if folder_id:
+            file_metadata["parents"] = [folder_id]
+
+        media = MediaIoBaseUpload(
+            file,
+            mimetype=file.type,
+            resumable=True
+        )
+
+        uploaded = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id, webViewLink"
+        ).execute()
+
+        return uploaded.get("webViewLink", "")
+
+    except Exception as e:
+        st.error(f"첨부파일 업로드 실패: {e}")
+        return ""
 
     except Exception as secrets_error:
         # 2) 로컬 fallback: service_account.json 이 실제 있을 때만 사용
@@ -2169,33 +2254,44 @@ def ensure_schedule_sheet_header(sheet):
         return
 
     old_header = [str(x).strip() for x in values[0]]
-    rows = values[1:]
 
-    # 이미 정상 구조면 종료
-    if [str(x).strip() for x in old_header[:8]] == EXPECTED_COLUMNS:
+    # 헤더가 이미 8개 정상 구조면 아무것도 하지 않음
+    if old_header[:8] == EXPECTED_COLUMNS:
         return
 
-    # 기존 데이터 유지하면서 재정렬
-    old_df = pd.DataFrame(rows, columns=old_header)
+    # 상품구분 컬럼이 이미 있으면 강제 재정렬하지 않고 경고만
+    if "상품구분" in old_header:
+        st.warning("시공일정 시트 헤더 순서가 예상과 다릅니다. 구글시트 헤더를 확인해주세요.")
+        return
 
-    # 상품구분 없으면 기본값
-    if "상품구분" not in old_df.columns:
-        old_df["상품구분"] = ""
+    # 상품구분이 아예 없을 때만 헤더 보정
+    # 기존 7컬럼 구조: 날짜, 설치현장, 시공담당, 수량, 비고, 상태, 완료일
+    if old_header[:7] == ["날짜", "설치현장", "시공담당", "수량", "비고", "상태", "완료일"]:
+        rows = values[1:]
+        new_rows = []
 
-    # 컬럼 맞추기
-    for col in EXPECTED_COLUMNS:
-        if col not in old_df.columns:
-            old_df[col] = ""
+        for row in rows:
+            row = row + [""] * (7 - len(row))
+            new_rows.append([
+                row[0],      # 날짜
+                "",          # 상품구분
+                row[1],      # 설치현장
+                row[2],      # 시공담당
+                row[3],      # 수량
+                row[4],      # 비고
+                row[5],      # 상태
+                row[6],      # 완료일
+            ])
 
-    save_df = old_df[EXPECTED_COLUMNS].copy().fillna("")
+        sheet.clear()
+        sheet.update(
+            "A1",
+            [EXPECTED_COLUMNS] + new_rows,
+            value_input_option="USER_ENTERED"
+        )
+        return
 
-    # 전체 다시 쓰기 (핵심)
-    sheet.clear()
-    sheet.update(
-        "A1",
-        [EXPECTED_COLUMNS] + save_df.astype(str).values.tolist(),
-        value_input_option="USER_ENTERED"
-    )
+    st.warning("시공일정 시트 헤더 구조를 자동 보정하지 않았습니다. 수동 확인이 필요합니다.")
 
 @st.cache_data(ttl=300)
 def load_schedule_data():
@@ -2253,26 +2349,15 @@ def save_schedule_data(df, sheet=None):
     save_df["수량"] = pd.to_numeric(save_df["수량"], errors="coerce").fillna(0).astype(int)
 
     # 기존 시트 데이터 길이 확인
-    old_values = sheet.get_all_values()
-    old_data_rows = max(0, len(old_values) - 1)  # 헤더 제외
-
-    # 새로 저장할 데이터
     rows = [save_df.columns.tolist()] + save_df.astype(str).values.tolist()
 
-    # 1) 새 데이터 저장
-    sheet.update("A1", rows)
+    sheet.clear()
 
-    # 2) 예전 데이터가 더 길었다면 남는 행 비우기
-    new_data_rows = len(save_df)
-
-    if old_data_rows > new_data_rows:
-        blank_rows = old_data_rows - new_data_rows
-        start_row = new_data_rows + 2   # 헤더가 1행이므로 실제 데이터 시작 보정
-        end_row = old_data_rows + 1
-
-        clear_range = f"A{start_row}:H{end_row}"
-        empty_values = [[""] * len(EXPECTED_COLUMNS) for _ in range(blank_rows)]
-        sheet.update(clear_range, empty_values)
+    sheet.update(
+        "A1",
+        rows,
+        value_input_option="USER_ENTERED"
+    )
 
     load_schedule_data.clear()
 
