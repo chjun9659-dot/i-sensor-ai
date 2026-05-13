@@ -2324,6 +2324,17 @@ def save_schedule_data(df, sheet=None):
 
     save_df = df.copy()
 
+    st.warning(f"저장 직전 시공일정 행 수: {len(save_df)}")
+    st.warning(f"저장 직전 컬럼: {list(save_df.columns)}")
+
+    if "상품구분" in save_df.columns:
+        st.warning(
+            "저장 직전 상품구분 값: "
+            + str(save_df["상품구분"].astype(str).str.strip().unique().tolist())
+        )
+    else:
+        st.error("저장 직전 상품구분 컬럼이 없습니다.")
+
     for col in EXPECTED_COLUMNS:
         if col not in save_df.columns:
             save_df[col] = ""
@@ -2332,6 +2343,19 @@ def save_schedule_data(df, sheet=None):
     if list(save_df.columns) != EXPECTED_COLUMNS:
         st.error("컬럼 구조 이상 - 저장 중단")
         return
+    # ✅ 시공일정 전체 빈 데이터 저장 방지
+    if len(save_df) == 0:
+        st.error("시공일정 데이터가 0건입니다. 저장을 중단합니다.")
+        return
+
+    # ✅ 상품구분 전체 공란 저장 방지
+    if (
+        len(save_df) > 0
+        and save_df["상품구분"].astype(str).str.strip().eq("").all()
+    ):
+        st.error("상품구분이 모두 비어 있어 저장을 중단합니다.")
+        return
+    
     # ✅ 필수값 정리
     save_df["날짜"] = save_df["날짜"].astype(str).str.strip()
     save_df["상품구분"] = save_df["상품구분"].astype(str).str.strip()
