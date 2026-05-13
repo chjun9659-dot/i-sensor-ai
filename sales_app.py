@@ -2267,31 +2267,8 @@ def ensure_schedule_sheet_header(sheet):
     # 상품구분이 아예 없을 때만 헤더 보정
     # 기존 7컬럼 구조: 날짜, 설치현장, 시공담당, 수량, 비고, 상태, 완료일
     if old_header[:7] == ["날짜", "설치현장", "시공담당", "수량", "비고", "상태", "완료일"]:
-        rows = values[1:]
-        new_rows = []
-
-        for row in rows:
-            row = row + [""] * (7 - len(row))
-            new_rows.append([
-                row[0],      # 날짜
-                "",          # 상품구분
-                row[1],      # 설치현장
-                row[2],      # 시공담당
-                row[3],      # 수량
-                row[4],      # 비고
-                row[5],      # 상태
-                row[6],      # 완료일
-            ])
-
-        sheet.clear()
-        sheet.update(
-            "A1",
-            [EXPECTED_COLUMNS] + new_rows,
-            value_input_option="USER_ENTERED"
-        )
+        st.error("시공일정 시트에 상품구분 컬럼이 없습니다. 자동 보정하지 않고 저장을 중단합니다.")
         return
-
-    st.warning("시공일정 시트 헤더 구조를 자동 보정하지 않았습니다. 수동 확인이 필요합니다.")
 
 @st.cache_data(ttl=300)
 def load_schedule_data():
