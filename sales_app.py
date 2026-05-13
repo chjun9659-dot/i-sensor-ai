@@ -168,7 +168,7 @@ BUSINESS_CONFIG = {
             "입찰공고": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=243967548#gid=243967548",
             "계약단지": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=2071693391#gid=2071693391",
             "연차관리": "https://docs.google.com/spreadsheets/d/1n7AXfaCIljI8cBMSX7DrLjPVEQPTTCXL2-rxqcLzepE/edit?gid=0#gid=0",
-            "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=1427359982#gid=1427359982,
+            "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=1427359982#gid=1427359982",
             "실사관리": "https://docs.google.com/spreadsheets/d/1rV9nZWGQDgUBgxldvojixj8Ys5DsefH9wa5-IWg_t34/edit?gid=859568227#gid=859568227",
         },
         "menus": [
