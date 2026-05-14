@@ -2275,39 +2275,52 @@ def ensure_schedule_sheet_header(sheet):
         sheet.update("A1:H1", [EXPECTED_COLUMNS])
         return
 
-    old_header = [str(x).strip() for x in values[0]]
+    header = [str(x).strip() for x in values[0]]
 
-    # 헤더가 이미 8개 정상 구조면 아무것도 하지 않음
-    if old_header[:8] == EXPECTED_COLUMNS:
-        return
-
-    # 상품구분 컬럼이 이미 있으면 강제 재정렬하지 않고 경고만
-    if "상품구분" in old_header:
-        st.warning("시공일정 시트 헤더 순서가 예상과 다릅니다. 구글시트 헤더를 확인해주세요.")
-        return
-
-    # 상품구분이 아예 없을 때만 헤더 보정
-    # 기존 7컬럼 구조: 날짜, 설치현장, 시공담당, 수량, 비고, 상태, 완료일
-    if old_header[:7] == ["날짜", "설치현장", "시공담당", "수량", "비고", "상태", "완료일"]:
-        st.error("시공일정 시트에 상품구분 컬럼이 없습니다. 자동 보정하지 않고 저장을 중단합니다.")
+    # ✅ A~H 기준 헤더가 다르면 무조건 기준 헤더로 복구
+    if header[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
+        sheet.update("A1:H1", [EXPECTED_COLUMNS])
+        st.warning("시공일정 헤더를 기준 컬럼으로 자동 복구했습니다.")
         return
 
 @st.cache_data(ttl=300)
 def load_schedule_data():
     sheet = get_schedule_sheet()
-    ensure_schedule_sheet_header(sheet)
 
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
+    values = sheet.get_all_values()
 
-    if df.empty:
+    if not values or len(values) < 2:
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-    for col in EXPECTED_COLUMNS:
-        if col not in df.columns:
-            df[col] = ""
+    header = [str(x).strip() for x in values[0]]
 
-    df = df[EXPECTED_COLUMNS]
+    # ✅ 헤더가 정상 아니면 앱에서 멈추지 않고 경고만 표시
+    if header[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
+        st.warning(
+            "시공일정 구글시트 헤더가 기준과 다릅니다. "
+            "앱은 기준 컬럼으로 강제 읽습니다."
+        )
+
+    # ✅ 구글 헤더 무시하고 A~H 8개 컬럼만 기준 컬럼으로 읽기
+    rows = values[1:]
+    fixed_rows = []
+
+    for row in rows:
+        row = row[:len(EXPECTED_COLUMNS)]
+
+        if len(row) < len(EXPECTED_COLUMNS):
+            row += [""] * (len(EXPECTED_COLUMNS) - len(row))
+
+        fixed_rows.append(row)
+
+    df = pd.DataFrame(fixed_rows, columns=EXPECTED_COLUMNS).fillna("")
+
+    # ✅ 완전 빈 행 제거
+    df = df[
+        df["날짜"].astype(str).str.strip().ne("") |
+        df["설치현장"].astype(str).str.strip().ne("") |
+        df["시공담당"].astype(str).str.strip().ne("")
+    ].copy()
 
     df["수량"] = pd.to_numeric(df["수량"], errors="coerce").fillna(0).astype(int)
     df["날짜"] = df["날짜"].astype(str)
