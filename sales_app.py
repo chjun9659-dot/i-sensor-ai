@@ -2272,16 +2272,19 @@ def ensure_schedule_sheet_header(sheet):
     values = sheet.get_all_values()
 
     if not values:
-        sheet.update("A1:H1", [EXPECTED_COLUMNS])
-        return
+        st.error("시공일정 시트가 비어 있습니다. 헤더를 먼저 확인해주세요.")
+        return False
 
     header = [str(x).strip() for x in values[0]]
 
-    # ✅ A~H 기준 헤더가 다르면 무조건 기준 헤더로 복구
     if header[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
-        sheet.update("A1:H1", [EXPECTED_COLUMNS])
-        st.warning("시공일정 헤더를 기준 컬럼으로 자동 복구했습니다.")
-        return
+        st.warning(
+            "시공일정 구글시트 헤더가 기준과 다릅니다. "
+            "앱에서는 저장하지 않고 읽기만 제한합니다."
+        )
+        return False
+
+    return True
 
 @st.cache_data(ttl=300)
 def load_schedule_data():
