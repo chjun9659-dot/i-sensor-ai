@@ -2299,33 +2299,25 @@ def load_schedule_data():
 
     # ✅ 헤더가 정상 아니면 앱에서 멈추지 않고 경고만 표시
     if header[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
-        st.warning(
+        st.error(
             "시공일정 구글시트 헤더가 기준과 다릅니다. "
-            "앱은 기준 컬럼으로 강제 읽습니다."
+            "데이터 보호를 위해 읽기/저장을 중단합니다."
         )
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-    # ✅ 구글 헤더 무시하고 A~H 8개 컬럼만 기준 컬럼으로 읽기
     rows = values[1:]
-    fixed_rows = []
+    df = pd.DataFrame(rows, columns=EXPECTED_COLUMNS)
 
-    for row in rows:
-        row = row[:len(EXPECTED_COLUMNS)]
+    df = df.fillna("")
 
-        if len(row) < len(EXPECTED_COLUMNS):
-            row += [""] * (len(EXPECTED_COLUMNS) - len(row))
+    # 수량 숫자 보정
+    df["수량"] = (
+        pd.to_numeric(df["수량"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
-        fixed_rows.append(row)
-
-    df = pd.DataFrame(fixed_rows, columns=EXPECTED_COLUMNS).fillna("")
-
-    # ✅ 완전 빈 행 제거
-    df = df[
-        df["날짜"].astype(str).str.strip().ne("") |
-        df["설치현장"].astype(str).str.strip().ne("") |
-        df["시공담당"].astype(str).str.strip().ne("")
-    ].copy()
-
-    df["수량"] = pd.to_numeric(df["수량"], errors="coerce").fillna(0).astype(int)
+    # 타입 보정
     df["날짜"] = df["날짜"].astype(str)
     df["완료일"] = df["완료일"].astype(str)
     df["상태"] = df["상태"].astype(str).replace("", "진행중")
