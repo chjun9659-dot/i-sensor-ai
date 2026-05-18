@@ -2409,12 +2409,13 @@ def save_schedule_data(df, sheet=None):
     save_df["수량"] = pd.to_numeric(save_df["수량"], errors="coerce").fillna(0).astype(int)
 
     # 기존 시트 데이터 길이 확인
-    rows = [save_df.columns.tolist()] + save_df.astype(str).values.tolist()
+    rows = [EXPECTED_COLUMNS] + save_df[EXPECTED_COLUMNS].values.tolist()
 
-    sheet.clear()
+    # 전체 삭제 금지
+    sheet.batch_clear(["A2:H10000"])
 
     sheet.update(
-        "A1",
+        "A1:H" + str(len(rows)),
         rows,
         value_input_option="USER_ENTERED"
     )
