@@ -2246,6 +2246,30 @@ def get_schedule_sheet():
 
     return sheet
 
+def repair_schedule_header(sheet):
+    try:
+        current = [str(x).strip() for x in sheet.row_values(1)]
+
+        # 현재 헤더가 부족하면 빈칸 채움
+        current += [""] * (len(EXPECTED_COLUMNS) - len(current))
+
+        # 헤더 불일치시 자동 복구
+        if current[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
+            sheet.update(
+                f"A1:H1",
+                [EXPECTED_COLUMNS]
+            )
+
+            st.warning(
+                "시공일정 헤더를 자동 복구했습니다. 새로고침 해주세요."
+            )
+
+            st.cache_data.clear()
+            st.stop()
+
+    except Exception as e:
+        st.error(f"헤더 점검 오류: {e}")    
+
 def append_schedule_data(new_row_df):
     sheet = get_schedule_sheet()
 
@@ -2289,6 +2313,8 @@ def ensure_schedule_sheet_header(sheet):
 @st.cache_data(ttl=300)
 def load_schedule_data():
     sheet = get_schedule_sheet()
+
+    repair_schedule_header(sheet)
 
     values = sheet.get_all_values()
 
