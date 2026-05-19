@@ -2273,6 +2273,14 @@ def repair_schedule_header(sheet):
 def append_schedule_data(new_row_df):
     sheet = get_schedule_sheet()
 
+    # ✅ 시트 존재 확인
+    if sheet is None:
+        st.error("시공일정 시트를 찾지 못했습니다.")
+        return
+
+    # ✅ 헤더 자동 복구
+    repair_schedule_header(sheet)
+
     save_df = new_row_df.copy()
 
     # 🚨 상품구분 컬럼 없으면 추가 저장 금지
@@ -2288,9 +2296,12 @@ def append_schedule_data(new_row_df):
 
     rows = save_df.astype(str).values.tolist()
 
-    sheet.append_rows(rows, value_input_option="USER_ENTERED")
+    sheet.append_rows(
+        rows,
+        value_input_option="USER_ENTERED"
+    )
 
-    load_schedule_data.clear()   
+    load_schedule_data.clear()  
 
 def ensure_schedule_sheet_header(sheet):
     values = sheet.get_all_values()
@@ -2355,70 +2366,67 @@ def save_schedule_data(df, sheet=None):
     if sheet is None:
         sheet = get_schedule_sheet()
 
+    if sheet is None:
+        st.error("시공일정 시트를 찾지 못했습니다.")
+        return
+
+    repair_schedule_header(sheet)
+
     save_df = df.copy()
-    # 🚨 저장 원본에 상품구분 컬럼 없으면 저장 금지
+
     if "상품구분" not in save_df.columns:
         st.error("저장 원본에 상품구분 컬럼이 없습니다. 저장을 중단합니다.")
         return
-    st.warning(f"저장 직전 시공일정 행 수: {len(save_df)}")
-    st.warning(f"저장 직전 컬럼: {list(save_df.columns)}")
-
-    if "상품구분" in save_df.columns:
-        st.warning(
-            "저장 직전 상품구분 값: "
-            + str(save_df["상품구분"].astype(str).str.strip().unique().tolist())
-        )
-    else:
-        st.error("저장 직전 상품구분 컬럼이 없습니다.")
 
     for col in EXPECTED_COLUMNS:
         if col not in save_df.columns:
             save_df[col] = ""
 
     save_df = save_df[EXPECTED_COLUMNS].fillna("")
-    if list(save_df.columns) != EXPECTED_COLUMNS:
-        st.error("컬럼 구조 이상 - 저장 중단")
-        return
-    # ✅ 시공일정 전체 빈 데이터 저장 방지
+
     if len(save_df) == 0:
         st.error("시공일정 데이터가 0건입니다. 저장을 중단합니다.")
         return
 
-    # ✅ 상품구분 전체 공란 저장 방지
-    if (
-        len(save_df) > 0
-        and save_df["상품구분"].astype(str).str.strip().eq("").all()
-    ):
-        st.error("상품구분이 모두 비어 있어 저장을 중단합니다.")
-        return
-    
-    # ✅ 필수값 정리
     save_df["날짜"] = save_df["날짜"].astype(str).str.strip()
     save_df["상품구분"] = save_df["상품구분"].astype(str).str.strip()
     save_df["설치현장"] = save_df["설치현장"].astype(str).str.strip()
     save_df["시공담당"] = save_df["시공담당"].astype(str).str.strip()
     save_df["상태"] = save_df["상태"].astype(str).str.strip()
 
-    # ✅ 빈 행 저장 방지
-    save_df = save_df[save_df["날짜"] != ""].copy()
-    save_df = save_df[save_df["설치현장"] != ""].copy()
-    save_df = save_df[save_df["시공담당"] != ""].copy()
+    save_df = save_df[
+        (save_df["날짜"] != "") &
+        (save_df["설치현장"] != "") &
+        (save_df["시공담당"] != "")
+    ].copy()
 
-    # ✅ 상태값 보정
+    if save_df.empty:
+        st.error("유효한 시공일정 데이터가 없습니다. 저장을 중단합니다.")
+        return
+
+    if save_df["상품구분"].astype(str).str.strip().eq("").all():
+        st.error("상품구분이 모두 비어 있어 저장을 중단합니다.")
+        return
+
     save_df.loc[~save_df["상태"].isin(["진행중", "완료"]), "상태"] = "진행중"
     save_df["수량"] = pd.to_numeric(save_df["수량"], errors="coerce").fillna(0).astype(int)
 
-    # 기존 시트 데이터 길이 확인
-    rows = [EXPECTED_COLUMNS] + save_df[EXPECTED_COLUMNS].values.tolist()
+    rows = [EXPECTED_COLUMNS] + save_df[EXPECTED_COLUMNS].astype(str).values.tolist()
 
-    # 전체 삭제 금지
-    sheet.batch_clear(["A2:H10000"])
-
+    # ✅ 1. 먼저 정상 데이터 저장
     sheet.update(
-        "A1:H" + str(len(rows)),
+        f"A1:H{len(rows)}",
         rows,
         value_input_option="USER_ENTERED"
     )
+
+    # ✅ 2. 저장 성공 후 남는 아래 행만 비움
+    old_values = sheet.get_all_values()
+    old_last_row = len(old_values)
+    new_last_row = len(rows)
+
+    if old_last_row > new_last_row:
+        sheet.batch_clear([f"A{new_last_row + 1}:H{old_last_row}"])
 
     load_schedule_data.clear()
 
