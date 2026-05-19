@@ -2328,11 +2328,7 @@ def load_schedule_data():
     repair_schedule_header(sheet)
 
     values = sheet.get_all_values()
-    st.write("읽은 values 수:", len(values))
 
-    if len(values) > 1:
-        st.write("첫 데이터:", values[1])
-        
     if not values:
         st.error("시공일정 시트가 완전히 비어 있습니다.")
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
