@@ -45,7 +45,13 @@ def schedule_page():
             df["완료일"] = df["완료일"].str.replace("/", "-", regex=False)
 
             if "상품구분" in df.columns:
+
+                st.write("현재 사업:", st.session_state.get("business"))
+
                 product_series = df["상품구분"].astype(str).str.strip()
+
+                st.write("상품구분 목록:")
+                st.write(product_series.value_counts())
 
                 if st.session_state.business == "아이센서":
                     df = df[
@@ -58,11 +64,18 @@ def schedule_page():
                         product_series.str.contains("충전기", na=False)
                     ].copy()
 
+                st.write("상품필터 후:", len(df))
+
             login_role = str(st.session_state.get("role", "")).strip()
             login_name = str(st.session_state.get("display_name", "")).strip()
 
             if login_role != "관리자" and "시공담당" in df.columns:
                 df = df[df["시공담당"].astype(str).str.strip() == login_name].copy()
+
+            st.write("business:", st.session_state.get("business"))
+            st.write("role:", login_role)
+            st.write("display_name:", login_name)
+            st.write("필터 후 개수:", len(df))
 
             if "날짜" in df.columns:
                 df = df.sort_values("날짜", ascending=True).reset_index(drop=True)
