@@ -2343,7 +2343,15 @@ def load_schedule_data():
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
     rows = values[1:]
-    df = pd.DataFrame(rows, columns=EXPECTED_COLUMNS)
+    # ✅ 행 길이 강제 보정
+    fixed_rows = []
+
+    for row in rows:
+        row = row[:len(EXPECTED_COLUMNS)]
+        row += [""] * (len(EXPECTED_COLUMNS) - len(row))
+        fixed_rows.append(row)
+
+    df = pd.DataFrame(fixed_rows, columns=EXPECTED_COLUMNS)
 
     df = df.fillna("")
 
