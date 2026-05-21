@@ -16,6 +16,7 @@ from modules.page_schedule import schedule_page
 from modules.page_inspection import inspection_page
 from modules.page_dashboard import page_dashboard
 from modules.page_maintenance import maintenance_page
+from modules.page_inventory_status import inventory_status_page
 
 st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
 # =========================================================
@@ -170,6 +171,7 @@ BUSINESS_CONFIG = {
             "연차관리": "https://docs.google.com/spreadsheets/d/1n7AXfaCIljI8cBMSX7DrLjPVEQPTTCXL2-rxqcLzepE/edit?gid=0#gid=0",
             "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=1427359982#gid=1427359982",
             "실사관리": "https://docs.google.com/spreadsheets/d/1rV9nZWGQDgUBgxldvojixj8Ys5DsefH9wa5-IWg_t34/edit?gid=859568227#gid=859568227",
+            "입출고현황":"https://docs.google.com/spreadsheets/d/1IZKU3P0IDz_hzky_3yIXFPlyjjcCUpmVYl4d-cT5B5c/edit?gid=1672034596#gid=1672034596",
         },
         "menus": [
             "대시보드",
@@ -184,6 +186,7 @@ BUSINESS_CONFIG = {
 
             "연차 관리",
             "시공 일정",
+            "아이센서 입출고현황",
             "실사 관리",
 
             "오늘 할 일",
@@ -629,7 +632,13 @@ def detect_header_row(raw: pd.DataFrame) -> int:
         "영업담당", "담당자", "실사담당", "수량", "판매가격", "계약날짜",
         "행위신고", "시공요청서", "시공", "시공여부", "세금계산서 발행",
         "세금계산서발행", "입금일", "영업수수료", "운영사", "구분",
-        "계약서 유무", "서류 풀 세팅 완료 표시", "추가요금", "설치업체", "설치유무"
+        "계약서 유무", "서류 풀 세팅 완료 표시", "추가요금", "설치업체", "설치유무",
+        # 아이센서 입출고현황
+        "순번", "납품일", "업체명", "납품처",
+        "납품단가", "시공비용", "수량",
+        "아이센서", "시공",
+        "발행 예정금액", "세금계산서", "발행일자",
+        "입금 확인 금액", "입금일자", "미수 금액","발행 예정금액",
     ]
 
     if raw.empty:
@@ -5592,9 +5601,9 @@ def main():
                 "계약단지",
             ],
             "🛠 시공/실사관리": [
-                "실사 관리",
-                "시공 일정",
-            ],
+            "실사 관리",
+            "시공 일정",
+        ],
             "👥 인사관리": [
                 "연차 관리",
             ],
@@ -5610,7 +5619,8 @@ def main():
             menu_groups["🔬 유지보수관리"] = [
                 "라우터 관리",
                 "아이센서 유지보수관리",
-                "차량관리"
+                "차량관리",
+                "아이센서 입출고현황"
             ]
 
         if is_admin():
@@ -5707,6 +5717,9 @@ def main():
 
     elif menu == "시공 일정":
         schedule_page()
+
+    elif menu == "아이센서 입출고현황":
+        inventory_status_page()
 
     elif menu == "실사 관리":
         inspection_page()
