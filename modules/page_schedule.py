@@ -59,11 +59,25 @@ def schedule_page():
                         product_series.str.contains("충전기", na=False)
                     ].copy()
 
-            login_role = str(st.session_state.get("role", "")).strip()
-            login_name = str(st.session_state.get("display_name", "")).strip()
+            login_role = str(
+                st.session_state.get("role", "")
+            ).strip()
 
-            if login_role != "관리자" and "시공담당" in df.columns:
-                df = df[df["시공담당"].astype(str).str.strip() == login_name].copy()
+            # ✅ 시공일정은 관리자/영업/시공 모두 전체 열람
+            if login_role not in ["관리자", "영업", "시공"]:
+                if "시공담당" in df.columns:
+                    login_name = str(
+                        st.session_state.get(
+                            "display_name", ""
+                        )
+                    ).strip()
+
+                    df = df[
+                        df["시공담당"]
+                        .astype(str)
+                        .str.strip()
+                        == login_name
+                    ].copy()
 
 
             if "날짜" in df.columns:
