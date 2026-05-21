@@ -2296,11 +2296,34 @@ def append_schedule_data(new_row_df):
 
     rows = save_df.astype(str).values.tolist()
 
-    sheet.append_rows(
+    # ✅ append 저장 직전 8칸 고정
+    fixed_rows = []
+
+    for row in rows:
+        row = list(row)
+
+        if len(row) < 8:
+            row = row + [""] * (8 - len(row))
+
+        if len(row) > 8:
+            row = row[:8]
+
+        fixed_rows.append(row)
+
+    rows = fixed_rows
+
+    if not rows:
+        st.warning("추가할 시공일정 데이터가 없습니다.")
+        return
+    # ✅ A:H 범위 안에서만 추가
+    existing_values = sheet.get_all_values()
+    next_row = len(existing_values) + 1
+
+    sheet.update(
+        f"A{next_row}:H{next_row + len(rows) - 1}",
         rows,
         value_input_option="USER_ENTERED"
     )
-
     load_schedule_data.clear()  
 
 def ensure_schedule_sheet_header(sheet):
@@ -2425,7 +2448,30 @@ def save_schedule_data(df, sheet=None):
     save_df["수량"] = pd.to_numeric(save_df["수량"], errors="coerce").fillna(0).astype(int)
 
     rows = [EXPECTED_COLUMNS] + save_df[EXPECTED_COLUMNS].astype(str).values.tolist()
+    # ✅ 저장 직전 헤더 최종 검문
+    current_header = [
+        str(x).strip()
+        for x in sheet.row_values(1)
+    ]
 
+    # 길이 보정
+    current_header += [""] * (
+        len(EXPECTED_COLUMNS) - len(current_header)
+    )
+
+    current_header = current_header[:8]
+
+    if current_header != EXPECTED_COLUMNS:
+
+        repair_schedule_header(sheet)
+
+        st.warning(
+            "시공일정 헤더 이상 발견 → 자동복구 후 저장 중단"
+        )
+
+        st.cache_data.clear()
+
+        st.stop()
     # ✅ 1. 먼저 정상 데이터 저장
     sheet.update(
         f"A1:H{len(rows)}",
