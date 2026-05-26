@@ -2456,7 +2456,7 @@ def save_schedule_data(df, sheet=None):
     save_df.loc[~save_df["상태"].isin(["진행중", "완료"]), "상태"] = "진행중"
     save_df["수량"] = pd.to_numeric(save_df["수량"], errors="coerce").fillna(0).astype(int)
 
-    rows = [EXPECTED_COLUMNS] + save_df[EXPECTED_COLUMNS].astype(str).values.tolist()
+    rows = save_df[EXPECTED_COLUMNS].astype(str).values.tolist()
     # ✅ 저장 직전 헤더 최종 검문
     current_header = [
         str(x).strip()
@@ -2483,7 +2483,7 @@ def save_schedule_data(df, sheet=None):
         st.stop()
     # ✅ 1. 먼저 정상 데이터 저장
     sheet.update(
-        f"A1:H{len(rows)}",
+        f"A2:H{len(rows) + 1}",
         rows,
         value_input_option="USER_ENTERED"
     )
@@ -2491,7 +2491,7 @@ def save_schedule_data(df, sheet=None):
     # ✅ 2. 저장 성공 후 남는 아래 행만 비움
     old_values = sheet.get_all_values()
     old_last_row = len(old_values)
-    new_last_row = len(rows)
+    new_last_row = len(rows) + 1
 
     if old_last_row > new_last_row:
         sheet.batch_clear([f"A{new_last_row + 1}:H{old_last_row}"])
