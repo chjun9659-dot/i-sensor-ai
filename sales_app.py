@@ -376,9 +376,18 @@ def backup_before_save(df, name):
 
 def gsheet_read(sheet_name, url):
     try:
-        df = load_google_sheet_data(st.session_state.business, sheet_name, url)
+        df = load_google_sheet_data(
+            st.session_state.business,
+            sheet_name,
+            url
+        )
+
+        if sheet_name == "연차관리":
+            df = df.fillna("").astype(str)
+
         log_event("READ", f"{sheet_name} 성공")
         return df
+
     except Exception as e:
         log_event("READ_FAIL", f"{sheet_name} / {e}")
         return pd.DataFrame()
