@@ -16,6 +16,7 @@ from modules.page_schedule import schedule_page
 from modules.page_inspection import inspection_page
 from modules.page_dashboard import page_dashboard
 from modules.page_maintenance import maintenance_page
+from modules.page_inventory_status import inventory_status_page
 
 st.set_page_config(page_title="윤우 영업 통합 시스템", layout="wide")
 # =========================================================
@@ -168,8 +169,9 @@ BUSINESS_CONFIG = {
             "입찰공고": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=243967548#gid=243967548",
             "계약단지": "https://docs.google.com/spreadsheets/d/1CWTvHC1r6i5wjcZoFJa5kAm-6T0SKao1EdjI8jwVQG8/edit?gid=2071693391#gid=2071693391",
             "연차관리": "https://docs.google.com/spreadsheets/d/1n7AXfaCIljI8cBMSX7DrLjPVEQPTTCXL2-rxqcLzepE/edit?gid=0#gid=0",
-            "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=0#gid=0",
+            "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=1427359982#gid=1427359982",
             "실사관리": "https://docs.google.com/spreadsheets/d/1rV9nZWGQDgUBgxldvojixj8Ys5DsefH9wa5-IWg_t34/edit?gid=859568227#gid=859568227",
+            "입출고현황":"https://docs.google.com/spreadsheets/d/1IZKU3P0IDz_hzky_3yIXFPlyjjcCUpmVYl4d-cT5B5c/edit?gid=1672034596#gid=1672034596",
         },
         "menus": [
             "대시보드",
@@ -184,6 +186,7 @@ BUSINESS_CONFIG = {
 
             "연차 관리",
             "시공 일정",
+            "아이센서 입출고현황",
             "실사 관리",
 
             "오늘 할 일",
@@ -194,7 +197,7 @@ BUSINESS_CONFIG = {
         "전기차 충전기": {
         "sheets": {
             "계약접수현황": "https://docs.google.com/spreadsheets/d/1Efuld8DUSHs8jR42R5XKIT3y-3P_pf--aP9ED_SYWhc/edit?gid=784400128#gid=784400128",
-            "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=0#gid=0",
+            "시공일정": "https://docs.google.com/spreadsheets/d/1-6P8Orzas1U6W-Rmv7pcx-N0-fiPnH-Ah20jDEsRXgs/edit?gid=1427359982#gid=1427359982",
             "실사관리": "https://docs.google.com/spreadsheets/d/1rV9nZWGQDgUBgxldvojixj8Ys5DsefH9wa5-IWg_t34/edit?gid=859568227#gid=859568227",
         },
         "menus": [
@@ -373,9 +376,18 @@ def backup_before_save(df, name):
 
 def gsheet_read(sheet_name, url):
     try:
-        df = load_google_sheet_data(st.session_state.business, sheet_name, url)
+        df = load_google_sheet_data(
+            st.session_state.business,
+            sheet_name,
+            url
+        )
+
+        if sheet_name == "연차관리":
+            df = df.fillna("").astype(str)
+
         log_event("READ", f"{sheet_name} 성공")
         return df
+
     except Exception as e:
         log_event("READ_FAIL", f"{sheet_name} / {e}")
         return pd.DataFrame()
@@ -430,17 +442,102 @@ def get_gsheet_client():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     key_path = os.path.join(base_dir, "service_account.json")
 
-    # 1) 배포 우선: Streamlit secrets 시도
     try:
         creds_dict = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
+        creds = Credentials.from_service_account_info(
+            dict(creds_dict),
+            scopes=scopes
+        )
+
         client = gspread.authorize(creds)
 
         st.session_state["google_auth_debug"] = {
             "mode": "streamlit_secrets",
             "client_email": creds.service_account_email,
         }
+
         return client
+
+    except Exception as secrets_error:
+
+        if os.path.exists(key_path):
+
+            creds = Credentials.from_service_account_file(
+                key_path,
+                scopes=scopes
+            )
+
+            client = gspread.authorize(creds)
+
+            st.session_state["google_auth_debug"] = {
+                "mode": "local_json",
+                "key_path": key_path,
+                "client_email": creds.service_account_email,
+                "secrets_error": str(secrets_error),
+            }
+
+            return client
+
+        raise RuntimeError(
+            f"구글 인증 실패 / secrets 오류: {secrets_error}"
+        )
+    
+def get_drive_service():
+    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials
+    import os
+    import streamlit as st
+
+    scopes = [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/spreadsheets",
+    ]
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    key_path = os.path.join(base_dir, "service_account.json")
+
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
+    except Exception:
+        creds = Credentials.from_service_account_file(key_path, scopes=scopes)
+
+    return build("drive", "v3", credentials=creds)
+
+def upload_file_to_drive(file, folder_id=None):
+    from googleapiclient.http import MediaIoBaseUpload
+    import streamlit as st
+
+    try:
+        if file is None:
+            return ""
+
+        service = get_drive_service()
+
+        file_metadata = {
+            "name": file.name
+        }
+
+        if folder_id:
+            file_metadata["parents"] = [folder_id]
+
+        media = MediaIoBaseUpload(
+            file,
+            mimetype=file.type,
+            resumable=True
+        )
+
+        uploaded = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id, webViewLink"
+        ).execute()
+
+        return uploaded.get("webViewLink", "")
+
+    except Exception as e:
+        st.error(f"첨부파일 업로드 실패: {e}")
+        return ""
 
     except Exception as secrets_error:
         # 2) 로컬 fallback: service_account.json 이 실제 있을 때만 사용
@@ -544,7 +641,13 @@ def detect_header_row(raw: pd.DataFrame) -> int:
         "영업담당", "담당자", "실사담당", "수량", "판매가격", "계약날짜",
         "행위신고", "시공요청서", "시공", "시공여부", "세금계산서 발행",
         "세금계산서발행", "입금일", "영업수수료", "운영사", "구분",
-        "계약서 유무", "서류 풀 세팅 완료 표시", "추가요금", "설치업체", "설치유무"
+        "계약서 유무", "서류 풀 세팅 완료 표시", "추가요금", "설치업체", "설치유무",
+        # 아이센서 입출고현황
+        "순번", "납품일", "업체명", "납품처",
+        "납품단가", "시공비용", "수량",
+        "아이센서", "시공",
+        "발행 예정금액", "세금계산서", "발행일자",
+        "입금 확인 금액", "입금일자", "미수 금액","발행 예정금액",
     ]
 
     if raw.empty:
@@ -2140,14 +2243,68 @@ EXPECTED_COLUMNS = ["날짜", "상품구분", "설치현장", "시공담당", "�
 
 def get_schedule_sheet():
     url = get_current_sheet_urls().get("시공일정")
+
+    if not url:
+        st.error("시공일정 URL이 없습니다.")
+        return None
+
     sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", url).group(1)
+
+    gid_match = re.search(r"gid=(\d+)", url)
+    gid = int(gid_match.group(1)) if gid_match else 0
+
     client = get_gsheet_client()
-    return client.open_by_key(sheet_id).sheet1
+    spreadsheet = client.open_by_key(sheet_id)
+
+    sheet = spreadsheet.get_worksheet_by_id(gid)
+
+    if sheet is None:
+        st.error(f"시공일정 시트를 찾지 못했습니다. gid={gid}")
+        return None
+
+    return sheet
+
+def repair_schedule_header(sheet):
+    try:
+        current = [str(x).strip() for x in sheet.row_values(1)]
+
+        # 현재 헤더가 부족하면 빈칸 채움
+        current += [""] * (len(EXPECTED_COLUMNS) - len(current))
+
+        # 헤더 불일치시 자동 복구
+        if current[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
+            sheet.update(
+                f"A1:H1",
+                [EXPECTED_COLUMNS]
+            )
+
+            st.warning(
+                "시공일정 헤더를 자동 복구했습니다. 새로고침 해주세요."
+            )
+
+            st.cache_data.clear()
+            st.stop()
+
+    except Exception as e:
+        st.error(f"헤더 점검 오류: {e}")    
 
 def append_schedule_data(new_row_df):
     sheet = get_schedule_sheet()
 
+    # ✅ 시트 존재 확인
+    if sheet is None:
+        st.error("시공일정 시트를 찾지 못했습니다.")
+        return
+
+    # ✅ 헤더 자동 복구
+    repair_schedule_header(sheet)
+
     save_df = new_row_df.copy()
+
+    # 🚨 상품구분 컬럼 없으면 추가 저장 금지
+    if "상품구분" not in save_df.columns:
+        st.error("추가 저장 데이터에 상품구분 컬럼이 없습니다.")
+        return
 
     for col in EXPECTED_COLUMNS:
         if col not in save_df.columns:
@@ -2157,75 +2314,101 @@ def append_schedule_data(new_row_df):
 
     rows = save_df.astype(str).values.tolist()
 
-    sheet.append_rows(rows, value_input_option="USER_ENTERED")
+    # ✅ append 저장 직전 8칸 고정
+    fixed_rows = []
 
-    load_schedule_data.clear()   
+    for row in rows:
+        row = list(row)
+
+        if len(row) < 8:
+            row = row + [""] * (8 - len(row))
+
+        if len(row) > 8:
+            row = row[:8]
+
+        fixed_rows.append(row)
+
+    rows = fixed_rows
+
+    if not rows:
+        st.warning("추가할 시공일정 데이터가 없습니다.")
+        return
+    # ✅ A:H 범위 안에서만 추가
+    existing_values = sheet.get_all_values()
+    next_row = len(existing_values) + 1
+
+    sheet.update(
+        f"A{next_row}:H{next_row + len(rows) - 1}",
+        rows,
+        value_input_option="USER_ENTERED"
+    )
+    load_schedule_data.clear()  
 
 def ensure_schedule_sheet_header(sheet):
     values = sheet.get_all_values()
 
     if not values:
-        sheet.update("A1:H1", [EXPECTED_COLUMNS])
-        return
+        st.error("시공일정 시트가 비어 있습니다. 헤더를 먼저 확인해주세요.")
+        return False
 
-    old_header = [str(x).strip() for x in values[0]]
+    header = [str(x).strip() for x in values[0]]
 
-    # 헤더가 이미 8개 정상 구조면 아무것도 하지 않음
-    if old_header[:8] == EXPECTED_COLUMNS:
-        return
-
-    # 상품구분 컬럼이 이미 있으면 강제 재정렬하지 않고 경고만
-    if "상품구분" in old_header:
-        st.warning("시공일정 시트 헤더 순서가 예상과 다릅니다. 구글시트 헤더를 확인해주세요.")
-        return
-
-    # 상품구분이 아예 없을 때만 헤더 보정
-    # 기존 7컬럼 구조: 날짜, 설치현장, 시공담당, 수량, 비고, 상태, 완료일
-    if old_header[:7] == ["날짜", "설치현장", "시공담당", "수량", "비고", "상태", "완료일"]:
-        rows = values[1:]
-        new_rows = []
-
-        for row in rows:
-            row = row + [""] * (7 - len(row))
-            new_rows.append([
-                row[0],      # 날짜
-                "",          # 상품구분
-                row[1],      # 설치현장
-                row[2],      # 시공담당
-                row[3],      # 수량
-                row[4],      # 비고
-                row[5],      # 상태
-                row[6],      # 완료일
-            ])
-
-        sheet.clear()
-        sheet.update(
-            "A1",
-            [EXPECTED_COLUMNS] + new_rows,
-            value_input_option="USER_ENTERED"
+    if header[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
+        st.warning(
+            "시공일정 구글시트 헤더가 기준과 다릅니다. "
+            "앱에서는 저장하지 않고 읽기만 제한합니다."
         )
-        return
+        return False
 
-    st.warning("시공일정 시트 헤더 구조를 자동 보정하지 않았습니다. 수동 확인이 필요합니다.")
+    return True
 
 @st.cache_data(ttl=300)
 def load_schedule_data():
     sheet = get_schedule_sheet()
-    ensure_schedule_sheet_header(sheet)
 
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
+    repair_schedule_header(sheet)
 
-    if df.empty:
+    values = sheet.get_all_values()
+
+    if not values:
+        st.error("시공일정 시트가 완전히 비어 있습니다.")
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-    for col in EXPECTED_COLUMNS:
-        if col not in df.columns:
-            df[col] = ""
+    if len(values) < 2:
+        st.warning("시공일정 시트에 헤더만 있고 데이터 행이 없습니다.")
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-    df = df[EXPECTED_COLUMNS]
+    header = [str(x).strip() for x in values[0]]
 
-    df["수량"] = pd.to_numeric(df["수량"], errors="coerce").fillna(0).astype(int)
+    # ✅ 헤더가 정상 아니면 앱에서 멈추지 않고 경고만 표시
+    if header[:len(EXPECTED_COLUMNS)] != EXPECTED_COLUMNS:
+        st.error(
+            "시공일정 구글시트 헤더가 기준과 다릅니다. "
+            "데이터 보호를 위해 읽기/저장을 중단합니다."
+        )
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
+
+    rows = values[1:]
+    # ✅ 행 길이 강제 보정
+    fixed_rows = []
+
+    for row in rows:
+        row = row[:len(EXPECTED_COLUMNS)]
+        row += [""] * (len(EXPECTED_COLUMNS) - len(row))
+        fixed_rows.append(row)
+
+    df = pd.DataFrame(fixed_rows, columns=EXPECTED_COLUMNS)
+
+    df = df.fillna("")
+
+    # 수량 숫자 보정
+    df["수량"] = (
+        pd.to_numeric(df["수량"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+
+    # 타입 보정
     df["날짜"] = df["날짜"].astype(str)
     df["완료일"] = df["완료일"].astype(str)
     df["상태"] = df["상태"].astype(str).replace("", "진행중")
@@ -2237,42 +2420,90 @@ def save_schedule_data(df, sheet=None):
     if sheet is None:
         sheet = get_schedule_sheet()
 
+    if sheet is None:
+        st.error("시공일정 시트를 찾지 못했습니다.")
+        return
+
+    repair_schedule_header(sheet)
+
     save_df = df.copy()
+
+    if "상품구분" not in save_df.columns:
+        st.error("저장 원본에 상품구분 컬럼이 없습니다. 저장을 중단합니다.")
+        return
 
     for col in EXPECTED_COLUMNS:
         if col not in save_df.columns:
             save_df[col] = ""
 
     save_df = save_df[EXPECTED_COLUMNS].fillna("")
-    if list(save_df.columns) != EXPECTED_COLUMNS:
-        st.error("컬럼 구조 이상 - 저장 중단")
+
+    if len(save_df) == 0:
+        st.error("시공일정 데이터가 0건입니다. 저장을 중단합니다.")
         return
-    # ✅ 필수값 정리
+
     save_df["날짜"] = save_df["날짜"].astype(str).str.strip()
     save_df["상품구분"] = save_df["상품구분"].astype(str).str.strip()
     save_df["설치현장"] = save_df["설치현장"].astype(str).str.strip()
     save_df["시공담당"] = save_df["시공담당"].astype(str).str.strip()
     save_df["상태"] = save_df["상태"].astype(str).str.strip()
 
-    # ✅ 빈 행 저장 방지
-    save_df = save_df[save_df["날짜"] != ""].copy()
-    save_df = save_df[save_df["설치현장"] != ""].copy()
-    save_df = save_df[save_df["시공담당"] != ""].copy()
+    save_df = save_df[
+        (save_df["날짜"] != "") &
+        (save_df["설치현장"] != "") &
+        (save_df["시공담당"] != "")
+    ].copy()
 
-    # ✅ 상태값 보정
+    if save_df.empty:
+        st.error("유효한 시공일정 데이터가 없습니다. 저장을 중단합니다.")
+        return
+
+    if save_df["상품구분"].astype(str).str.strip().eq("").all():
+        st.error("상품구분이 모두 비어 있어 저장을 중단합니다.")
+        return
+
     save_df.loc[~save_df["상태"].isin(["진행중", "완료"]), "상태"] = "진행중"
     save_df["수량"] = pd.to_numeric(save_df["수량"], errors="coerce").fillna(0).astype(int)
 
-    # 기존 시트 데이터 길이 확인
-    rows = [save_df.columns.tolist()] + save_df.astype(str).values.tolist()
+    rows = save_df[EXPECTED_COLUMNS].astype(str).values.tolist()
+    # ✅ 저장 직전 헤더 최종 검문
+    current_header = [
+        str(x).strip()
+        for x in sheet.row_values(1)
+    ]
 
-    sheet.clear()
+    # 길이 보정
+    current_header += [""] * (
+        len(EXPECTED_COLUMNS) - len(current_header)
+    )
 
+    current_header = current_header[:8]
+
+    if current_header != EXPECTED_COLUMNS:
+
+        repair_schedule_header(sheet)
+
+        st.warning(
+            "시공일정 헤더 이상 발견 → 자동복구 후 저장 중단"
+        )
+
+        st.cache_data.clear()
+
+        st.stop()
+    # ✅ 1. 먼저 정상 데이터 저장
     sheet.update(
-        "A1",
+        f"A2:H{len(rows) + 1}",
         rows,
         value_input_option="USER_ENTERED"
     )
+
+    # ✅ 2. 저장 성공 후 남는 아래 행만 비움
+    old_values = sheet.get_all_values()
+    old_last_row = len(old_values)
+    new_last_row = len(rows) + 1
+
+    if old_last_row > new_last_row:
+        sheet.batch_clear([f"A{new_last_row + 1}:H{old_last_row}"])
 
     load_schedule_data.clear()
 
@@ -2594,14 +2825,35 @@ def vacation_page():
                 else:
                     used_leave += amount
 
+            # ✅ 발생연차/기산기간 재계산
+            hire_date = pd.to_datetime(df.iloc[row_pos]["입사일"], errors="coerce")
+
+            if pd.notna(hire_date):
+                start_date, end_date, service_years, auto_leave_days = calculate_auto_leave_days(
+                    hire_date.date()
+                )
+
+                df.iloc[row_pos, start_col_pos] = str(start_date)
+                df.iloc[row_pos, end_col_pos] = str(end_date)
+
+                service_col_pos = list(df.columns).index("근속년수")
+                df.iloc[row_pos, service_col_pos] = int(service_years)
+
+                df.iloc[row_pos, total_col_pos] = float(auto_leave_days)
+
+                total_leave = float(auto_leave_days)
+
             remain_leave = total_leave - used_leave
 
-            # ✅ 배포앱 안전 처리: df 전체를 object 타입으로 변경
+            # ✅ 배포앱 안전 처리: df 전체를 object 타입으로
             df = df.astype(object)
 
             # ✅ 선택 직원 값 저장
             df.iloc[row_pos, used_col_pos] = format_leave_number(used_leave)
             df.iloc[row_pos, remain_col_pos] = format_leave_number(remain_leave)
+
+            # ✅ 구글시트 저장
+            save_vacation_data(df)
 
             save_vacation_log(
                 action="재계산",
@@ -2611,7 +2863,9 @@ def vacation_page():
                 reason="",
                 note="선택 직원 연차 다시 계산"
             )
+
             load_google_sheet_data.clear()
+
             st.success(f"{selected_name} 연차가 다시 계산되었습니다.")
             st.rerun()
 
@@ -5379,9 +5633,9 @@ def main():
                 "계약단지",
             ],
             "🛠 시공/실사관리": [
-                "실사 관리",
-                "시공 일정",
-            ],
+            "실사 관리",
+            "시공 일정",
+        ],
             "👥 인사관리": [
                 "연차 관리",
             ],
@@ -5397,7 +5651,8 @@ def main():
             menu_groups["🔬 유지보수관리"] = [
                 "라우터 관리",
                 "아이센서 유지보수관리",
-                "차량관리"
+                "차량관리",
+                "아이센서 입출고현황"
             ]
 
         if is_admin():
@@ -5494,6 +5749,9 @@ def main():
 
     elif menu == "시공 일정":
         schedule_page()
+
+    elif menu == "아이센서 입출고현황":
+        inventory_status_page()
 
     elif menu == "실사 관리":
         inspection_page()
