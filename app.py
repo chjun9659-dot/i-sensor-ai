@@ -1977,7 +1977,8 @@ def recalculate_vacation_summary(df: pd.DataFrame):
 
 def recalculate_all_vacation_data(df: pd.DataFrame):
     df = df.copy()
-
+    df = df.astype(object)
+    
     for idx in df.index:
         hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
 
@@ -2002,6 +2003,7 @@ def refresh_expired_vacation_rows(df: pd.DataFrame):
     전체 재정리가 아니라 만료된 직원 행만 처리
     """
     df = df.copy()
+    df = df.astype(object)
     today = date.today()
     changed = False
     changed_names = []
