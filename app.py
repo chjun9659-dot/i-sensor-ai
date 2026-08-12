@@ -383,7 +383,7 @@ def gsheet_read(sheet_name, url):
         )
 
         if sheet_name == "연차관리":
-            df = df.fillna("").astype(str)
+            df = df.fillna("").astype(object)
 
         log_event("READ", f"{sheet_name} 성공")
         return df
