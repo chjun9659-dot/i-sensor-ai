@@ -2003,29 +2003,55 @@ def refresh_expired_vacation_rows(df: pd.DataFrame):
     전체 재정리가 아니라 만료된 직원 행만 처리
     """
     df = df.copy()
-    df = df.astype(object)
+
+    # ✅ 연차 관련 컬럼을 모두 object 타입으로 강제
+    safe_cols = [
+        "이름",
+        "입사일",
+        "기산시작일",
+        "기산종료일",
+        "근속년수",
+        "발생 연차",
+        "사용 연차",
+        "잔여 연차",
+    ]
+
+    for col in safe_cols:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(object)
+
     today = date.today()
     changed = False
     changed_names = []
 
     for idx in df.index:
-        end_date = pd.to_datetime(df.loc[idx, "기산종료일"], errors="coerce")
+        end_date = pd.to_datetime(
+            df.loc[idx, "기산종료일"],
+            errors="coerce"
+        )
 
         if pd.isna(end_date):
             continue
 
         if today > end_date.date():
-            hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
+            hire_date = pd.to_datetime(
+                df.loc[idx, "입사일"],
+                errors="coerce"
+            )
 
             if pd.isna(hire_date):
                 continue
 
-            start_date, new_end_date, service_years, leave_days = calculate_auto_leave_days(hire_date.date())
+            start_date, new_end_date, service_years, leave_days = \
+                calculate_auto_leave_days(hire_date.date())
 
             df.loc[idx, "기산시작일"] = str(start_date)
             df.loc[idx, "기산종료일"] = str(new_end_date)
-            df.loc[idx, "근속년수"] = int(service_years)
-            df.loc[idx, "발생 연차"] = float(leave_days)
+
+            # ✅ 숫자도 저장 시 안전하게 문자열로 처리
+            df.loc[idx, "근속년수"] = str(int(service_years))
+            df.loc[idx, "발생 연차"] = format_leave_number(leave_days)
 
             changed = True
             changed_names.append(str(df.loc[idx, "이름"]))
@@ -2034,37 +2060,6 @@ def refresh_expired_vacation_rows(df: pd.DataFrame):
         df = recalculate_vacation_summary(df)
 
     return df, changed, changed_names
-
-def build_monthly_stats(df, target_year, target_month):
-    rows = []
-    total_count = 0
-    total_amount = 0.0
-
-    for _, row in df.iterrows():
-        emp_name = str(row.get("이름", "")).strip()
-        emp_count = 0
-        emp_amount = 0.0
-
-        for col in USE_COLS:
-            value = row.get(col, None)
-            parsed_date, amount = parse_use_entry(value)
-            if parsed_date is None:
-                continue
-
-            if parsed_date.year == int(target_year) and parsed_date.month == int(target_month):
-                emp_count += 1
-                emp_amount += amount
-
-        if emp_count > 0:
-            rows.append({
-                "이름": emp_name,
-                "사용 건수": emp_count,
-                "사용 일수": format_leave_number(emp_amount)
-            })
-            total_count += emp_count
-            total_amount += emp_amount
-
-    return pd.DataFrame(rows), total_count, total_amount
     
 
 def render_employee_vacation_cards(df: pd.DataFrame):
