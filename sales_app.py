@@ -2012,17 +2012,13 @@ def refresh_expired_vacation_rows(df: pd.DataFrame):
         if pd.isna(end_date):
             continue
 
-        hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
-        if pd.isna(hire_date):
-            continue
+        if today > end_date.date():
+            hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
 
-        start_date, new_end_date, service_years, leave_days = calculate_auto_leave_days(hire_date.date())
-        # 입사 1년 미만은 매월 발생 연차가 달라지면 기산종료일 이전에도 갱신합니다.
-        is_under_one_year = int(service_years) == 0 and today >= hire_date.date()
-        current_leave = to_number(df.loc[idx, "발생 연차"])
-        monthly_leave_changed = is_under_one_year and abs(current_leave - float(leave_days)) > 1e-9
+            if pd.isna(hire_date):
+                continue
 
-        if today > end_date.date() or monthly_leave_changed:
+            start_date, new_end_date, service_years, leave_days = calculate_auto_leave_days(hire_date.date())
 
             df.loc[idx, "기산시작일"] = str(start_date)
             df.loc[idx, "기산종료일"] = str(new_end_date)
