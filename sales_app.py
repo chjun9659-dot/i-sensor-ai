@@ -887,9 +887,11 @@ def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.
 
         values = worksheet.get_all_values()
 
+        st.info(f"연결된 연차관리 시트: {spreadsheet.title} / 탭: {worksheet.title}")
+        st.info(f"구글시트 원본 행 수: {len(values)}")
+
         if not values or len(values) < 2:
             return pd.DataFrame()
-
         headers = [str(x).strip() for x in values[0]]
         rows = values[1:]
 
