@@ -922,9 +922,7 @@ def load_df(sheet_key: str) -> pd.DataFrame:
     if sheet_key in sheet_urls:
         try:
             df = gsheet_read(sheet_key, sheet_urls[sheet_key])
-            if not df.empty:
-                gsheet_write(sheet_key, df)
-                return df
+            return df
         except Exception as e:
             st.warning(f"{sheet_key} 구글시트 불러오기 실패, 로컬 백업 사용: {e}")
 
