@@ -390,7 +390,9 @@ def gsheet_read(sheet_name, url):
 
     except Exception as e:
         log_event("READ_FAIL", f"{sheet_name} / {e}")
-        return pd.DataFrame()
+        if sheet_name == "연차관리":
+            st.error(f"연차관리 읽기 실패: {type(e).__name__}: {e}")
+        raise
 
 
 def gsheet_write(sheet_name, df, url=None):
@@ -887,9 +889,11 @@ def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.
 
         values = worksheet.get_all_values()
 
+        st.info(f"연결된 연차관리 시트: {spreadsheet.title} / 탭: {worksheet.title}")
+        st.info(f"구글시트 원본 행 수: {len(values)}")
+
         if not values or len(values) < 2:
             return pd.DataFrame()
-
         headers = [str(x).strip() for x in values[0]]
         rows = values[1:]
 
@@ -919,12 +923,23 @@ def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.
 def load_df(sheet_key: str) -> pd.DataFrame:
     sheet_urls = get_current_sheet_urls()
 
+    if sheet_key == "연차관리":
+        if sheet_key not in sheet_urls:
+            st.error("연차관리 구글시트 URL 설정이 없습니다.")
+            return pd.DataFrame()
+
+        try:
+            df = gsheet_read(sheet_key, sheet_urls[sheet_key])
+            st.info(f"연차관리 구글시트 읽기 결과: {len(df)}행")
+            return df
+        except Exception as e:
+            st.error(f"연차관리 구글시트 연결 오류: {type(e).__name__}: {e}")
+            return pd.DataFrame()
+
     if sheet_key in sheet_urls:
         try:
             df = gsheet_read(sheet_key, sheet_urls[sheet_key])
-            if not df.empty:
-                gsheet_write(sheet_key, df)
-                return df
+            return df
         except Exception as e:
             st.warning(f"{sheet_key} 구글시트 불러오기 실패, 로컬 백업 사용: {e}")
 
@@ -1937,6 +1952,7 @@ def parse_cancel_amount(value):
 
 
 def recalculate_vacation_summary(df: pd.DataFrame):
+    df = df.copy().astype(object)
     for idx in df.index:
         total_leave = to_number(df.loc[idx, "발생 연차"])
         used_leave = 0.0
@@ -1976,7 +1992,7 @@ def recalculate_vacation_summary(df: pd.DataFrame):
 
 
 def recalculate_all_vacation_data(df: pd.DataFrame):
-    df = df.copy()
+    df = df.copy().astype(object)
 
     for idx in df.index:
         hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
@@ -1997,41 +2013,43 @@ def recalculate_all_vacation_data(df: pd.DataFrame):
     return df
 
 def refresh_expired_vacation_rows(df: pd.DataFrame):
+    """기산기간 만료 또는 1년 미만 월별 발생분을 메모리에서 갱신합니다.
+
+    이 함수 자체는 구글시트에 기록하지 않습니다.
     """
-    기산종료일이 지난 직원만 자동 갱신
-    전체 재정리가 아니라 만료된 직원 행만 처리
-    """
-    df = df.copy()
-    today = date.today()
-    changed = False
+    df = df.copy().astype(object)  # pandas StringDtype 컬럼에 숫자 대입 시 예외 방지
     changed_names = []
+    today = date.today()
 
     for idx in df.index:
-        end_date = pd.to_datetime(df.loc[idx, "기산종료일"], errors="coerce")
-
-        if pd.isna(end_date):
+        hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
+        if pd.isna(hire_date) or hire_date.date() > today:
             continue
 
-        if today > end_date.date():
-            hire_date = pd.to_datetime(df.loc[idx, "입사일"], errors="coerce")
+        start_date, end_date, service_years, leave_days = calculate_auto_leave_days(hire_date.date())
+        if start_date is None:
+            continue
 
-            if pd.isna(hire_date):
-                continue
+        recorded_end = pd.to_datetime(df.loc[idx, "기산종료일"], errors="coerce")
+        expired = pd.isna(recorded_end) or today > recorded_end.date()
+        # 최초 1년 미만의 월별 발생분은 기산기간 종료 전에도 갱신해야 합니다.
+        first_year = service_years == 0
+        recorded_leave = to_number(df.loc[idx, "발생 연차"])
+        monthly_due = first_year and recorded_leave != float(leave_days)
 
-            start_date, new_end_date, service_years, leave_days = calculate_auto_leave_days(hire_date.date())
+        if not (expired or monthly_due):
+            continue
 
+        if expired:
             df.loc[idx, "기산시작일"] = str(start_date)
-            df.loc[idx, "기산종료일"] = str(new_end_date)
-            df.loc[idx, "근속년수"] = int(service_years)
-            df.loc[idx, "발생 연차"] = float(leave_days)
+            df.loc[idx, "기산종료일"] = str(end_date)
+            df.loc[idx, "근속년수"] = str(int(service_years))
+        df.loc[idx, "발생 연차"] = format_leave_number(leave_days)
+        changed_names.append(str(df.loc[idx, "이름"]))
 
-            changed = True
-            changed_names.append(str(df.loc[idx, "이름"]))
-
-    if changed:
+    if changed_names:
         df = recalculate_vacation_summary(df)
-
-    return df, changed, changed_names
+    return df, bool(changed_names), changed_names
 
 def build_monthly_stats(df, target_year, target_month):
     rows = []
@@ -2184,56 +2202,92 @@ def create_backup():
     df.to_csv(backup_path, index=False, encoding="utf-8-sig")
     return backup_path
 
-def save_vacation_data(df):
-    sheet_urls = get_current_sheet_urls()
-    url = sheet_urls.get("연차관리", "")
+def save_vacation_data(df, *, employee_name=None, fields=None, append_employee=False):
+    """연차관리 시트의 지정 직원/지정 칸만 갱신합니다.
 
+    전체 행 덮어쓰기 및 행 삭제는 금지합니다. 직원 이름은 시트에서 유일해야 합니다.
+    """
+    import json
+    from pathlib import Path
+
+    url = get_current_sheet_urls().get("연차관리", "")
     if not url:
-        raise Exception("연차관리 구글시트 URL이 없습니다.")
-
-    client = get_gsheet_client()
+        raise ValueError("연차관리 구글시트 URL이 없습니다.")
     sheet_id = re.search(r"/d/([a-zA-Z0-9-_]+)", url).group(1)
-    spreadsheet = client.open_by_key(sheet_id)
-    worksheet = spreadsheet.get_worksheet(0)
+    worksheet = get_gsheet_client().open_by_key(sheet_id).get_worksheet(0)
+    original = worksheet.get_all_values()
+    if len(original) < 2:
+        raise ValueError("원본 연차관리 시트가 비어 있습니다. 저장을 중단했습니다.")
+    headers = [str(x).strip() for x in original[0]]
+    if not headers or "이름" not in headers or len(headers) != len(set(headers)):
+        raise ValueError("연차관리 헤더가 비정상입니다. 저장을 중단했습니다.")
+    if "이름" not in df.columns:
+        raise ValueError("직원 이름 열이 없습니다.")
+    name_col = headers.index("이름")
+    live_names = {}
+    for row_no, row in enumerate(original[1:], start=2):
+        name = str(row[name_col]).strip() if len(row) > name_col else ""
+        if name:
+            if name in live_names:
+                raise ValueError(f"시트에 중복 직원 이름이 있습니다: {name}")
+            live_names[name] = row_no
 
-    save_df = df.copy()
+    def cell_value(v):
+        if pd.isna(v):
+            return ""
+        if isinstance(v, (date, datetime, pd.Timestamp)):
+            return v.strftime("%Y-%m-%d")
+        return str(v).strip()
 
-    if "row_id" in save_df.columns:
-        save_df = save_df.drop(columns=["row_id"])
+    # 저장 전 원본을 로컬 CSV로 남깁니다. Streamlit Cloud의 로컬 백업은 영구 보관이 아닙니다.
+    backup_dir = Path(VACATION_BACKUP_DIR)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"save_before_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json"
+    backup_path.write_text(json.dumps(original, ensure_ascii=False), encoding="utf-8")
 
-    values = worksheet.get_all_values()
-    if not values:
-        raise Exception("연차관리 시트에 헤더가 없습니다.")
+    if append_employee:
+        if len(df) != len(live_names) + 1:
+            raise ValueError("직원 추가 시 원본 행 수와 불일치합니다. 저장을 중단했습니다.")
+        new_names = set(df["이름"].astype(str).str.strip()) - set(live_names)
+        if len(new_names) != 1:
+            raise ValueError("새 직원 한 명만 추가할 수 있습니다.")
+        new_name = new_names.pop()
+        record = df[df["이름"].astype(str).str.strip() == new_name].iloc[0]
+        worksheet.append_row([cell_value(record.get(col, "")) for col in headers], value_input_option="USER_ENTERED")
+        load_google_sheet_data.clear()
+        return
 
-    headers = [str(x).strip() for x in values[0]]
-    headers = [h for h in headers if h != ""]
-
-    for col in headers:
-        if col not in save_df.columns:
-            save_df[col] = ""
-
-    save_df = save_df[headers].copy()
-    save_df = save_df.where(pd.notnull(save_df), "")
-
-    for col in save_df.columns:
-        save_df[col] = save_df[col].apply(
-            lambda x: x.strftime("%Y-%m-%d") if isinstance(x, (datetime, date, pd.Timestamp)) else str(x).strip()
-        )
-
-    rows = save_df.values.tolist()
-
-    worksheet.update("A2", rows, value_input_option="USER_ENTERED")
-
-    old_rows = max(0, len(values) - 1)
-    new_rows = len(rows)
-
-    if old_rows > new_rows:
-        blank_rows = old_rows - new_rows
-        clear_start = new_rows + 2
-        empty_rows = [[""] * len(headers) for _ in range(blank_rows)]
-        worksheet.update(f"A{clear_start}", empty_rows)
-
-    load_google_sheet_data.clear() 
+    if not employee_name or not fields:
+        raise ValueError("안전 저장은 직원 이름과 수정할 열을 지정해야 합니다.")
+    if employee_name not in live_names:
+        raise ValueError(f"원본 시트에 직원이 없습니다: {employee_name}")
+    if any(f not in headers for f in fields):
+        raise ValueError("시트에 없는 열이 포함되어 있습니다.")
+    # 행 전체의 직원 이름을 바꾸는 경우에도 기존 이름으로 행을 찾습니다.
+    row_no = live_names[employee_name]
+    matches = df[df["이름"].astype(str).str.strip() == employee_name]
+    if matches.empty:
+        raise ValueError("저장 대상 직원의 데이터가 없습니다.")
+    if len(matches) != 1:
+        raise ValueError("저장 대상 직원이 중복되어 있습니다.")
+    record = matches.iloc[0]
+    current = original[row_no - 1]
+    updates = []
+    for field in fields:
+        col_no = headers.index(field)
+        value = cell_value(record[field])
+        old_value = current[col_no] if col_no < len(current) else ""
+        if value != str(old_value).strip():
+            # gspread batch_update는 여러 셀을 한 번에 갱신합니다.
+            from gspread.utils import rowcol_to_a1
+            updates.append({"range": rowcol_to_a1(row_no, col_no + 1), "values": [[value]]})
+    if updates:
+        # 저장 직전 대상 행이 다른 사용자에 의해 수정되었는지 재확인합니다.
+        latest = worksheet.row_values(row_no)
+        if [str(x) for x in latest] != [str(x) for x in current[:len(latest)]] or any(str(x).strip() for x in current[len(latest):]):
+            raise ValueError("다른 사용자가 연차 데이터를 변경했습니다. 새로고침 후 다시 시도하세요.")
+        worksheet.batch_update(updates, value_input_option="USER_ENTERED")
+    load_google_sheet_data.clear()
 
 # =========================================================
 # 시공 일정 시스템
@@ -2639,14 +2693,10 @@ def vacation_page():
         df, vacation_changed, changed_names = refresh_expired_vacation_rows(df)
 
         if vacation_changed:
-            backup_file = create_backup()
-            save_vacation_data(df)
-            load_google_sheet_data.clear()
             st.info(
-                f"기산기간이 지난 직원 연차가 자동 갱신되었습니다: "
-                f"{', '.join(changed_names)} / 백업: {backup_file}"
+                "연차 계산 결과가 화면에만 반영되었습니다(구글시트 자동 저장 없음): "
+                + ", ".join(changed_names)
             )
-            st.rerun()
 
         df = apply_role_filter(df)
 
@@ -2694,11 +2744,7 @@ def vacation_page():
                 if not confirm_recalc:
                     st.warning("체크 후 실행하세요.")
                 else:
-                    df = recalculate_all_vacation_data(df)
-                    save_vacation_data(df)
-                    load_google_sheet_data.clear()
-                    st.success("전체 재계산 완료")
-                    st.rerun()
+                    st.warning("전체 연차 일괄 저장은 기록 보호를 위해 잠시 비활성화했습니다. 직원별 등록·취소는 정상 이용 가능합니다.")
 
         with tool_col3:
             if os.path.exists(VACATION_BACKUP_DIR):
@@ -2714,7 +2760,10 @@ def vacation_page():
         '<div class="erp-section-title">👥 직원 선택</div>',
         unsafe_allow_html=True
     )
-
+    if "이름" not in df_view.columns:
+        st.error("연차관리 데이터에서 '이름' 열을 찾을 수 없습니다.")
+        st.write("현재 읽어온 열 이름:", df_view.columns.tolist())
+        st.stop()
     names = sorted(df_view["이름"].dropna().astype(str).unique().tolist())
 
     if is_admin:
@@ -2834,6 +2883,17 @@ def vacation_page():
             df.iloc[row_pos, used_col_pos] = format_leave_number(used_leave)
             df.iloc[row_pos, remain_col_pos] = format_leave_number(remain_leave)
 
+            # 선택 직원의 계산 결과를 실제 구글시트에 안전하게 반영합니다.
+            # 기존 사용일 기록은 수정하지 않습니다.
+            try:
+                save_vacation_data(
+                    df, employee_name=selected_name,
+                    fields=["사용 연차", "잔여 연차"]
+                )
+            except Exception as exc:
+                st.exception(exc)
+                st.stop()
+
             save_vacation_log(
                 action="재계산",
                 target_name=str(selected_name),
@@ -2919,7 +2979,7 @@ def vacation_page():
                         df.loc[target_idx, "사용 연차"] = target_one.loc[target_idx, "사용 연차"]
                         df.loc[target_idx, "잔여 연차"] = target_one.loc[target_idx, "잔여 연차"]
 
-                        save_vacation_data(df)
+                        save_vacation_data(df, employee_name=selected_name, fields=["발생 연차", "사용 연차", "잔여 연차", "기산시작일", "기산종료일", "근속년수", df.columns[empty_col_idx]])
 
                         save_vacation_log(
                             action="등록",
@@ -3012,7 +3072,7 @@ def vacation_page():
                     df.loc[idx, "사용 연차"] = format_leave_number(new_used)
                     df.loc[idx, "잔여 연차"] = format_leave_number(new_remain)
 
-                    save_vacation_data(df)
+                    save_vacation_data(df, employee_name=selected_name, fields=["발생 연차", "사용 연차", "잔여 연차", "기산시작일", "기산종료일", "근속년수", selected_col])
 
                     save_vacation_log(
                         action="취소",
@@ -3086,7 +3146,7 @@ def vacation_page():
 
                         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
-                        save_vacation_data(df)
+                        save_vacation_data(df, append_employee=True)
                         load_google_sheet_data.clear()
                         st.success("직원 추가 완료!")
                         st.rerun()
@@ -3135,7 +3195,9 @@ def vacation_page():
                     else:
                         duplicate_names = [n for n in df["이름"].astype(str).tolist() if n != edit_name]
 
-                        if edited_name in duplicate_names:
+                        if edited_name != edit_name:
+                            st.error("기존 기록 보호를 위해 직원 이름 변경은 일시 제한했습니다.")
+                        elif edited_name in duplicate_names:
                             st.error("같은 이름의 직원이 이미 있습니다.")
                         else:
                             idx = df[df["이름"] == edit_name].index[0]
@@ -3172,7 +3234,7 @@ def vacation_page():
                                 service_col_pos = list(df.columns).index("근속년수")
                                 df.iat[row_pos, service_col_pos] = int(service_years)
 
-                                save_vacation_data(df)
+                                save_vacation_data(df, employee_name=edit_name, fields=["입사일", "기산시작일", "기산종료일", "근속년수", "발생 연차", "사용 연차", "잔여 연차"])
                                 load_google_sheet_data.clear()
                                 st.success("직원 정보 수정 완료!")
                                 st.rerun()
@@ -3194,10 +3256,7 @@ def vacation_page():
                     if before_count == after_count:
                         st.error("삭제할 직원을 찾지 못했습니다.")
                     else:
-                        save_vacation_data(df)
-                        load_google_sheet_data.clear()
-                        st.success(f"{delete_name} 직원 삭제 완료!")
-                        st.rerun()
+                        st.error("기존 연차 기록 보호를 위해 직원 삭제는 일시 제한했습니다.")
 
     # =====================================================
     # 월별 연차 통계
