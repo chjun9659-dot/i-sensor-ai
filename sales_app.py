@@ -2873,7 +2873,7 @@ def vacation_page():
                     fields=["사용 연차", "잔여 연차"]
                 )
             except Exception as exc:
-                st.error(f"재계산 결과 저장 실패: {exc}")
+                st.exception(exc)
                 st.stop()
 
             save_vacation_log(
