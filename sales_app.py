@@ -2743,7 +2743,10 @@ def vacation_page():
         '<div class="erp-section-title">👥 직원 선택</div>',
         unsafe_allow_html=True
     )
-
+    if "이름" not in df_view.columns:
+        st.error("연차관리 데이터에서 '이름' 열을 찾을 수 없습니다.")
+        st.write("현재 읽어온 열 이름:", df_view.columns.tolist())
+        st.stop()
     names = sorted(df_view["이름"].dropna().astype(str).unique().tolist())
 
     if is_admin:
