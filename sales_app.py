@@ -919,6 +919,19 @@ def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.
 def load_df(sheet_key: str) -> pd.DataFrame:
     sheet_urls = get_current_sheet_urls()
 
+    if sheet_key == "연차관리":
+        if sheet_key not in sheet_urls:
+            st.error("연차관리 구글시트 URL 설정이 없습니다.")
+            return pd.DataFrame()
+
+        try:
+            df = gsheet_read(sheet_key, sheet_urls[sheet_key])
+            st.info(f"연차관리 구글시트 읽기 결과: {len(df)}행")
+            return df
+        except Exception as e:
+            st.error(f"연차관리 구글시트 연결 오류: {type(e).__name__}: {e}")
+            return pd.DataFrame()
+
     if sheet_key in sheet_urls:
         try:
             df = gsheet_read(sheet_key, sheet_urls[sheet_key])
