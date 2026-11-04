@@ -1937,6 +1937,7 @@ def parse_cancel_amount(value):
 
 
 def recalculate_vacation_summary(df: pd.DataFrame):
+    df = df.copy().astype(object)
     for idx in df.index:
         total_leave = to_number(df.loc[idx, "발생 연차"])
         used_leave = 0.0
