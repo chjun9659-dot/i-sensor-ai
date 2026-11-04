@@ -889,8 +889,6 @@ def load_google_sheet_data(business_name: str, sheet_name: str, url: str) -> pd.
 
         values = worksheet.get_all_values()
 
-        st.info(f"연결된 연차관리 시트: {spreadsheet.title} / 탭: {worksheet.title}")
-        st.info(f"구글시트 원본 행 수: {len(values)}")
 
         if not values or len(values) < 2:
             return pd.DataFrame()
@@ -930,7 +928,6 @@ def load_df(sheet_key: str) -> pd.DataFrame:
 
         try:
             df = gsheet_read(sheet_key, sheet_urls[sheet_key])
-            st.info(f"연차관리 구글시트 읽기 결과: {len(df)}행")
             return df
         except Exception as e:
             st.error(f"연차관리 구글시트 연결 오류: {type(e).__name__}: {e}")
@@ -2692,12 +2689,6 @@ def vacation_page():
         # ✅ 기산종료일 지난 직원만 자동 갱신
         df, vacation_changed, changed_names = refresh_expired_vacation_rows(df)
 
-        if vacation_changed:
-            st.info(
-                "연차 계산 결과가 화면에만 반영되었습니다(구글시트 자동 저장 없음): "
-                + ", ".join(changed_names)
-            )
-
         df = apply_role_filter(df)
 
         users = load_users_from_gsheet()
@@ -2722,36 +2713,13 @@ def vacation_page():
         return
 
     # =====================================================
-    # 관리 도구
+    # 관리자 전용 백업 도구 (연차 재정리/일괄 저장 기능은 노출하지 않음)
     # =====================================================
     if is_admin:
-        st.markdown(
-            '<div class="erp-section-title">🛠 관리 도구</div>',
-            unsafe_allow_html=True
-        )
-
-        tool_col1, tool_col2, tool_col3 = st.columns(3)
-
-        with tool_col1:
-            if st.button("💾 지금 백업하기", use_container_width=True, key="vac_backup_btn_unique"):
+        with st.expander("🛠 관리 도구 (관리자 전용)", expanded=False):
+            if st.button("💾 지금 백업하기", key="vac_backup_btn_unique"):
                 backup_file = create_backup()
                 st.success(f"백업 완료: {backup_file}")
-
-        with tool_col2:
-            confirm_recalc = st.checkbox("정말 전체 연차를 재정리하고 구글시트에 저장합니다. 백업 후에만 체크하세요.")
-
-            if st.button("📊 연차 수치 재정리", use_container_width=True, key="vac_recalc_btn_unique"):
-                if not confirm_recalc:
-                    st.warning("체크 후 실행하세요.")
-                else:
-                    st.warning("전체 연차 일괄 저장은 기록 보호를 위해 잠시 비활성화했습니다. 직원별 등록·취소는 정상 이용 가능합니다.")
-
-        with tool_col3:
-            if os.path.exists(VACATION_BACKUP_DIR):
-                backup_files = sorted(os.listdir(VACATION_BACKUP_DIR), reverse=True)
-                st.write(f"백업 파일 수: {len(backup_files)}")
-            else:
-                st.write("백업 파일 수: 0")
 
     # =====================================================
     # 직원 선택
