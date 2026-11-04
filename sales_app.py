@@ -390,7 +390,9 @@ def gsheet_read(sheet_name, url):
 
     except Exception as e:
         log_event("READ_FAIL", f"{sheet_name} / {e}")
-        return pd.DataFrame()
+        if sheet_name == "연차관리":
+            st.error(f"연차관리 읽기 실패: {type(e).__name__}: {e}")
+        raise
 
 
 def gsheet_write(sheet_name, df, url=None):
